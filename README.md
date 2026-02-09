@@ -1,3 +1,5 @@
+### This is Elle Adams MADA project repository
+
 # Overview
 
 A template file and folder structure for a data analysis project/paper done with R/Quarto/GitHub. Other components (e.g., other programming languages) can be added as needed. 

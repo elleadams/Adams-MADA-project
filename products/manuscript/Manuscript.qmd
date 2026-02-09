@@ -1,6 +1,6 @@
 ---
-title: "Example Manuscript Template for a Data Analysis Project"
-author: ""
+title: "Data Analysis Project - What are the trends in anti-microbial resistance among outbreak isolates over time, geography, and pathogen?"
+author: "Elle Adams"
 format:
   docx:
     toc: false
@@ -61,23 +61,20 @@ _It is recommended to use a structured abstract with Background/Methods/Results/
 _Provide enough background on your topic that others can understand the why and how of your analysis_ 
 
 ## Description of data and data source
-_Describe what the data is, what it contains, where it is from, etc. Eventually this might be part of a methods section._
+The datasets utilized in this project are from the  BEAM (Bacteria, Enterics, Ameba, and Mycotics) Dashboard, which include data from the System for Enteric Disease Response, Investigation, and Coordination (SEDRIC), National Antimicrobial Resistance Monitoring System for Enteric Bacteria (NARMS) and National Outbreak Reporting System (NORS). The datasets contain information about pathogens, serotypes, antimicrobial resistance, HHS region, burden, and trajectory. I will likely combine a couple datasets on the BEAM dashboard to answer my questions. 
 
 ## Questions/Hypotheses to be addressed
-_State the research questions you plan to answer with this analysis._
 
-To cite other work (important everywhere, but likely happens first in introduction), make sure your references are in the BibTeX file specified in the YAML header above and have the right BibTeX key. Then you can include like this:
+The question I am interested in asking for this project concerns investigating trends in anti-microbial resistance among outbreak isolates over time, geography, and pathogen. This question interests me primarily because I am interested in understanding the "rules" or lack thereof for outbreaks, particularly bacterial outbreaks. 
 
-Examples of reproducible research projects can for instance be found in [@mckay2020; @mckay2020a].
-
-
+Before really looking at any of the data, I would hypothesize that outbreak strains would have very similar anti-microbial resistance mutations, and I would imagine that they would be geographically separated into serotypes. 
 
 {{< pagebreak >}}
 
 
 # Methods 
 
-_Describe your methods. That should describe the data, the cleaning processes, and the analysis approaches. You might want to provide a shorter description here and all the details in the supplement._
+Part 1 - At this stage, I imagine for the analysis statistical analyses, linear regressions, plots over time, plots over different regions, plots separating isolates by classification and frequency, investigation of the types of antimicrobial resistance, etc. Pretty vague right now. 
 
 
 ## Schematic of workflow
