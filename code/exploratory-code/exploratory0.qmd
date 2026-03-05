@@ -5,7 +5,6 @@ output: html_document
 ---
 
   
-  
 This Quarto file loads the cleaned data and does some exploring.
 
 This version has the code inside the Quarto file itself.
