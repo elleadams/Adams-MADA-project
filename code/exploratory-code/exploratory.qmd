@@ -92,7 +92,7 @@ figure_file = here("results", "figures", "naming-number-isolates.png")
 ggsave(filename = figure_file, plot = plot3) 
 ```
 
-Also interested to see if source site are in anyway correlated to number of outbreak isolates. 
+Also interested to see if source site or source type are in anyway correlated to number of outbreak isolates. 
 
 ```{r}
 ###Straightforward plots this time 
