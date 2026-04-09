@@ -2,12 +2,12 @@
 
 # Overview
 
-A template file and folder structure for a data analysis project/paper done with R/Quarto/GitHub. Other components (e.g., other programming languages) can be added as needed. 
+Data analysis project/paper done with R/Quarto/GitHub by Elle Adams for MADA course Spring 2026. 
 
 
 # Pre-requisites
 
-This is a template for a data analysis project using R, Quarto, GitHub and a reference manager that can handle BibTeX. Our recommendation for the reference manager is Zotero, with the Better BibTeX plugin/extension. It is also assumed that you have a word processor installed (e.g. MS Word or [LibreOffice](https://www.libreoffice.org/)). You need that software stack to make use of this template. To produce PDF output, you need a TeX distribution installed. You can use TinyTeX, following [these instructions.](https://quarto.org/docs/output-formats/pdf-basics.html)
+This is the data analysis project of Elle Adams, made using a template for the final project for the UGA MADA course and using R, Quarto, GitHub and a reference manager that can handle BibTeX. With intention to use Zotero, with the Better BibTeX plugin/extension, once I can figure it out. It is also assumed that you have a word processor installed (e.g. MS Word or [LibreOffice](https://www.libreoffice.org/)). You need that software stack to make use of this template. To produce PDF output, you need a TeX distribution installed. You can use TinyTeX, following [these instructions.](https://quarto.org/docs/output-formats/pdf-basics.html)
 
 
 # Template structure and content
@@ -60,7 +60,7 @@ If you plan to use `renv`, start by reading [the introduction to `renv` article]
 
 # Getting started
 
-This is a GitHub template repository. The best way to get it and start using it is [by following these steps.](https://help.github.com/en/articles/creating-a-repository-from-a-template)
+This project used the template from a GitHub template repository. The best way to get it and start using it is [by following these steps.](https://help.github.com/en/articles/creating-a-repository-from-a-template)
 
 Once you got the repository, you can check out the examples by executing them in order. First run the processing code, which will produce the processed data. Then run the EDA scripts and analysis scripts, which will take the processed data and produce some results. 
 
