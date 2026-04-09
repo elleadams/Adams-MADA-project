@@ -1,0 +1,110 @@
+---
+title: "Basic Exploratory Analysis of BEAM Outbreak Antimicrobial Isolate Data"
+date: "2026-04-09"
+output: html_document
+---
+
+# Setup
+
+Load needed packages, make sure they are installed.
+
+```{r}
+library(readr) 
+library(dplyr) 
+library(tidyverse) 
+library(skimr) 
+library(here)
+```
+
+Load the data.
+
+```{r}
+#Path to data. Note the use of the here() package and not absolute paths
+data_location <- here::here("data","processed-data","processeddata.rds")
+#load data
+mydata <- readRDS(data_location)
+```
+
+So for now in this qmd we are calling the preliminarily processed dataframe with 2118 rows and 13 columns. 
+
+# Data exploration through tables
+
+Showing a bit of code to produce and save a summary table.
+
+```{r}
+summary_df = skimr::skim(mydata)
+print(summary_df)
+# save to file
+summarytable_file = here("results", "tables", "summarytable.rds")
+saveRDS(summary_df, file = summarytable_file)
+```
+
+# Data exploration through figures
+
+So I think first I just want to see plots, one for each year, with number of outbreak isolates per state, just to get a baseline. 
+
+```{r}
+##Grouping first 
+year_state_subset <- mydata %>% group_by(Year, State) %>%
+    summarise(isolate_count = n(), .groups = 'drop')
+##Making faceted bar plots
+plot1 <- ggplot(plot1, aes(x = State, y = isolate_count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  facet_wrap(~Year) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 1, size = 4))
+##Saving
+figure_file = here("results", "figures", "faceted-states-isolates.png")
+ggsave(filename = figure_file, plot = plot1) 
+```
+
+Then I want to see total number of outbreak isolates over time. 
+
+```{r}
+##To see the continuous plot over time that I want to see, I need to make a proper date column
+df_monthly <- mydata %>%
+  mutate(date = make_date(Year, Month, 1)) %>%
+  group_by(date) %>%
+  summarise(total_isolates = sum(`Outbreak associated isolates`)) 
+###Now making the plot
+plot2 <- ggplot(df_monthly, aes(x = date, y = total_isolates)) +
+  geom_line(color = "blue", size = 1) +
+  geom_point() +
+  scale_x_date(date_labels = "%b %Y", date_breaks = "3 months")+ 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+##Saving
+figure_file = here("results", "figures", "outbreaks-over-time.png")
+ggsave(filename = figure_file, plot = plot2) 
+```
+
+I also want to see a genus/species breakdown of number of isolates, to see which bacterium has the most outbreaks, one per year. 
+
+```{r}
+##To see the unique genus and species (Pathogen and Serotype/Species) combos, I need to make a new column first
+df_naming <- mydata %>%
+  mutate(genus_species = paste(Pathogen, `Serotype/Species`, sep = " ")) %>%
+  count(genus_species)
+###Now making plot
+plot3 <- ggplot(df_naming, aes(x = genus_species, y = n)) +
+  geom_col() +
+  coord_flip()
+##Saving 
+figure_file = here("results", "figures", "naming-number-isolates.png")
+ggsave(filename = figure_file, plot = plot3) 
+```
+
+Also interested to see if source site are in anyway correlated to number of outbreak isolates. 
+
+```{r}
+###Straightforward plots this time 
+plot4 <- ggplot(mydata, aes(x = `Source Site`, y = `Outbreak associated isolates`)) + 
+    geom_col()
+
+plot5 <- ggplot(mydata, aes(x = `Source Type`, y = `Outbreak associated isolates`)) + 
+    geom_col()
+#Saving
+figure_file = here("results", "figures", "site-outbreaks.png")
+ggsave(filename = figure_file, plot = plot4) 
+
+figure_file = here("results", "figures", "type-outbreaks.png")
+ggsave(filename = figure_file, plot = plot5) 
+```

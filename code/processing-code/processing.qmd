@@ -7,7 +7,7 @@ output: html_document
 
 # Setup
 
-Load needed packages. make sure they are installed.
+Load needed packages, make sure they are installed.
 
 ```{r}
 library(readr) 
@@ -36,6 +36,7 @@ skim(rawdata)
 
 Some basic information: 239,804 rows and 13 columns. 
 Some columns have similar names, according to the CDC Beam website Number of multistate outbreaks = Number of new multistate outbreaks associated with each state and Number of multistate outbreaks - US = Number of unique new multistate outbreaks across the US.
+Columns called: 1 - Year, 2 - Month, 3 - State, 4 - Source Type, 5 - Source Site, 6 - Pathogen, 7 - Serotype/Species, 8 - Number of isolates, 9 - Outbreak associated isolates, 10 - New multistate outbreaks, 11 - New multistate outbreaks - US, 12 - Isolates with clinically important antimicrobial resistance, 13 - Number of sequenced isolated analyzed by NARMS. 
 
 # Cleaning
 
@@ -47,7 +48,7 @@ rows_missing_state <- which(is.na(rawdata$State))
 print(rawdata[rows_missing_state, ])
 ```
 
-Now I can see that rows 44453, 61088, 61089, 64372, 79239, 79240, and 80401 have missing State information.
+Now I can see that rows 44453, 61088, 61089, 64372, 79239, 79240, and 80401 have missing State information. This will be important for looking at trends in antimicrobial properties by geography and I will need to remove these rows when asking those questions. 
 
 The last five columns of data have a LOT of NAs, which I need to keep in mind for the analysis, but all of those columns should contain numbers, so I might be able to turn all of the NAs in zeros if that would help with analysis. First I kind of just want to see which rows actually have data in those columns.
 
@@ -58,51 +59,83 @@ oai_rows_data <- rawdata %>%
 
 print(oai_rows_data) #20,208 rows actually have data
 
-##New multistate outbreaks column 
-nmo_rows_data <- rawdata %>%
-  filter(complete.cases(rawdata$`New multistate outbreaks`))
-
-print(nmo_rows_data) #9,922 rows actually have data
-
-##New multistate outbreak - US column
-nmou_rows_data <- rawdata %>%
-  filter(complete.cases(rawdata$`New multistate outbreaks - US`))
-
-print(nmou_rows_data) #1,266 rows actually have data
-
-##% Isolates with clinically important antimicrobial resistance column
-pcia_rows_data <- rawdata %>%
-  filter(complete.cases(rawdata$`% Isolates with clinically important antimicrobial resistance`))
-
-print(pcia_rows_data) #2,118 rows actually have data
-
-##Number of sequenced isolates analyzed by NARMS column 
-nsia_rows_data <- rawdata %>%
-  filter(complete.cases(rawdata$`Number of sequenced isolates analyzed by NARMS`))
-
-print(nsia_rows_data) #7,712 rows actually have data
-
-##Number of rows that are complete
-complete_rows_data <- rawdata %>%
-    filter(complete.cases(rawdata))
-
-print(complete_rows_data) # 147 rows are COMPLETE
 ```
 
-Based on looking at this, it looks like really no matter what questions I decide to ask, I will have thousands of samples to contribute to the answer. 
+The dataframe oai_rows_data contains rows that have data in the Outbreak associated isolates column, which gives a number of isolates. Because the questions I am interested in pertain specifically to outbreak isolates, I want to only look at the rows that have this data for all further steps. 
 
 ```{r}
+##% Isolates with clinically important antimicrobial resistance column
+pcia_rows_data <- oai_rows_data %>%
+  filter(complete.cases(oai_rows_data$`% Isolates with clinically important antimicrobial resistance`))
+
+print(pcia_rows_data) #2,118 rows actually have data
+```
+
+For the questions I am specifically asking in this project, I want to know not just about the outbreak strains themselves, but specifically the ones that show antimicrobial resisant properties, so I will be using this dataset moving forward to make sure all my pathogens/outbreaks of interest have this property. With this being a percent, I will probably want to add a column that has information about NUMBER of isolates with antimicrobial resistance. 
+
+```{r}
+##Add a column to subset from outbreak associated isolates with antimicrobial resistance (Outbreaks with antimicrobial resistance)
+owar_data <- pcia_rows_data %>% mutate(`Number of Outbreak Isolates with antimicrobial resistance` = `Outbreak associated isolates`*((`% Isolates with clinically important antimicrobial resistance`)/100))
+
+print(owar_data) #2,118 rows and 14 columns, it worked
+```
+
+Okay new dataframe owar_data, I have that column with number of isolates with antimicrobial resistance. Looking at it, why are the numbers so small??
+
+```{r}
+##New multistate outbreaks column 
+nmo_rows_data <- owar_data %>%
+  filter(complete.cases(owar_data$`New multistate outbreaks`))
+
+print(nmo_rows_data) #1,232 rows actually have data
 
 ```
 
-All done, data is clean now. 
+The dataframe nmo_rows_data is important for the questions that pertain to geography, for this column it is specifically the number of new multistate outbreaks associated with each state. I *THINK* the information in these rows is really just counting the number of outbreaks that specific pathogen caused for each state in that year? Will need to explore to see how they differ in graphing to fully grasp the difference her. This subset of data will have some columns with NA values.  
+
+```{r}
+##New multistate outbreak - US column
+nmou_rows_data <- owar_data %>%
+  filter(complete.cases(owar_data$`New multistate outbreaks - US`))
+
+print(nmou_rows_data) #Only 147 rows actually have data
+
+```
+
+The dataframe nmou_rows_data is important for questions about geography and differs from the previous column in that it just counts each outbreak once per outbreak pathogen as it is a country wide count, I think this means that there were 1,266 unique outbreaks across the US in this dataset. Again, I will have to graph to get a better idea of what it looks like. This subset of data will have some columns with NA values.  
+
+```{r}
+##Number of sequenced isolates analyzed by NARMS column 
+nsia_rows_data <- owar_data %>%
+  filter(complete.cases(owar_data$`Number of sequenced isolates analyzed by NARMS`))
+
+print(nsia_rows_data) #2,118 rows actually have data
+```
+
+After looking at this column, even though it does tell me how many isolates were sequenced by National Antimicrobial Resistance Monitoring System (NARMS), I don't actually think this information will be helpful to my analysis going forward, so I think I will remove it. 
+
+```{r}
+##Remove NSIA column 
+owar_data <- subset(owar_data, select = -`Number of sequenced isolates analyzed by NARMS`)
+```
+
+Now pcia_rows_data has 2,118 rows and 13 columns. Now just out of curiousity, I want to see how many rows are totally complete, with information in all remaining columns
+
+```{r}
+##Number of rows that are complete
+complete_rows_data <- owar_data %>%
+    filter(complete.cases(owar_data))
+
+print(complete_rows_data) #Only 147 rows are COMPLETE
+```
+
+Okay, so at this point I have the dataframe owar_data, which has information for outbreak strains with antimicrobial resistance, I don't think I will need the Number of isolates column, but I think I will keep it for now for basic exploration of the data. 
 
 Let's assign at the end to some final variable, this makes it easier to add further cleaning steps above.
 
 ```{r}
-processeddata <- 
+processeddata <- owar_data
 ```
-
 
 # Save data 
 
