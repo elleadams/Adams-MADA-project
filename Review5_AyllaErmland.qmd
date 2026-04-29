@@ -1,0 +1,145 @@
+---
+title: Project Review 5
+author: Aylla von Ermland
+date: 04/29/2026
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+---
+
+# Overview
+
+"Data Analysis Project - What are the trends in anti-microbial resistance among outbreak isolates over time, geography, and pathogen?"
+
+**Author:** Elle Adams
+
+**Project reviewer:** Aylla von Ermland
+
+# Specific project content evaluation
+
+## Background, Context and Motivation
+
+### Feedback and Comments
+The project currently lacks essential components. There is no abstract, and the manuscript still contains substantial template text that should be removed. This makes the document appear incomplete and difficult to evaluate. The introduction and background are largely missing, which prevents understanding the context, feasibility, and significance of the project. A well-structured introduction is needed, including references to relevant literature and a clear explanation of how this work fits into existing research.
+
+There are also technical issues preventing the Manuscript.qmd file to render. For example, the figure file **antigen-recognition.png** is missing, causing errors. This must be fixed to ensure the document compiles successfully.
+
+Despite these issues, the research question is interesting, and the proposed use of NORS data is appropriate and promising. The project shows potential, but it is still at a very early stage and requires substantial development, including background, analysis, and interpretation.
+
+### Summary assessment
+* some contextualization and motivation
+
+## Question description
+The research question appears interesting but the authors hypothesis of what he expects to see/results is not stated. The author question is if there are trends in anti-microbial resistance among outbreak isolates over time, in the context of geographic location and pathogens. Pathogens is used very broadly and is important to indicate what pathogen class the study will be focused on. It is difficult to determine the exact hypotheses or how they relate to the data being used.
+
+The project would benefit from clearly stated research questions or hypotheses, along with a brief explanation of how the available data can answer them.
+
+### Summary assessment
+* question/hypotheses unclear
+
+## Data description
+The datasets utilized in this project are from the  BEAM (Bacteria, Enterics, Ameba, and Mycotics) Dashboard, which include data from the System for Enteric Disease Response, Investigation, and Coordination (SEDRIC), National Antimicrobial Resistance Monitoring System for Enteric Bacteria (NARMS) and National Outbreak Reporting System (NORS). The datasets contain information about pathogens, serotypes, antimicrobial resistance, HHS region, burden, and trajectory.
+
+### Feedback and Comments
+The data described is available inside the "Data" folder as an excel file, but there is no detailed description of the data structure, variables, or metadata. A proper data description is needed, including:
+
+- Description of variables
+- Any preprocessing steps
+- Limitations of the dataset
+
+### Summary assessment
+* source and overall structure of data poorly explained
+
+## Data wrangling and exploratory analysis
+
+### Feedback and Comments
+The exploratory analysis is incomplete and currently not reproducible. Errors such as **"object 'plot1' not found"** indicate that the code is not functioning properly.
+
+There are also issues with the data that are not addressed. For example: The low pathogen count in 2026 data in faceted-states-isolates.png is not explained.
+The apparent drop in outbreaks in early 2026 may be due to missing or incomplete data rather than a real trend. These issues suggest that proper data cleaning steps are missing. The project should include:
+
+Data cleaning steps
+Explicit handling of missing or incomplete years
+
+### Summary assessment
+* some weaknesses in wrangling and exploratory component
+
+## Appropriateness of Analysis
+
+### Feedback and Comments
+At this stage, there is no data analysis presented, making it difficult to review this project. The project appears to be limited to initial exploratory steps. Further development is needed, including:
+
+- Clear analytical methods
+- Justification for chosen methods
+- Proper implementation and interpretation
+
+### Summary assessment
+* wrong/inadequate analysis
+
+## Presentation
+
+### Feedback and Comments
+The presentation is currently weak due to incomplete figures, missing explanations, and rendering errors. Some plots exist from exploratory analysis, but they are not fully interpreted or discussed.
+
+To improve:
+- Ensure all figures render correctly
+- Discuss figures you generated and provide clear captions and explanations
+
+### Summary assessment
+* results are poorly presented, hard to understand, poor quality
+
+## Discussion/Conclusions
+
+### Feedback and Comments
+There is no discussion or conclusion section. The project lacks interpretation of results, consideration of limitations, and connection back to the research question. A proper discussion should include:
+
+- Interpretation of findings
+- Limitations of the data and analysis
+- Implications of the results
+
+### Summary assessment
+* major parts of discussion missing or wrong 
+
+## Further comments
+Overall, this is a promising project with a good research idea and relevant dataset. However, it is still in a very early stage. Significant work is needed to develop the manuscript, including data cleaning, analysis, and interpretation.
+
+# Overall project content evaluation
+
+## Structure
+
+### Feedback and Comments
+The project structure is unclear and appears incomplete. The presence of template text and missing files suggests that the repository is not fully organized.
+
+### Summary assessment
+* poor and confusing structure
+
+## Documentation 
+
+### Feedback and Comments
+Documentation is insufficient. It is difficult to follow the workflow or understand the analysis steps due to missing explanations and incomplete project.
+
+### Summary assessment
+* poorly documented
+
+## Reproducibility
+
+### Feedback and Comments
+The only step I was able to detect code is the exploratory analysis which as mentioned before were not fully reproducible. 
+
+### Summary assessment
+* major parts not reproducible 
+
+## Thoroughness
+### Feedback and Comments
+The project lacks depth and completeness. It has nice ideas from the initial phase, but later many essential components are missing, including full analysis, interpretation, and discussion.
+
+### Summary assessment
+* weak level of thoroughness
+
+## Further comments
+This project has a strong starting idea and a relevant dataset, which are major strengths. However, it requires substantial development across all components, including structure, analysis, and interpretation. With proper refinement and completion, it has the potential to become a solid and meaningful analysis.
+
+
+
