@@ -32,6 +32,8 @@ library(xgboost)
 library(zoo)
 library(kknn)
 library(timetk)
+library(LiblineaR)
+
 ```
 
 Load the data.
@@ -172,21 +174,111 @@ ggplot(combined_predict_xgb_time, aes(x = predicted_next, y = .pred, color = dat
 
 ```
 
-
 Second question - WHICH SPECIES will the next outbreak be
 
 ```{r}
-##Model 1 - 
+##Data Prep
+species_data <- time_data %>% mutate(days_since_last = as.numeric(Sys.Date() - last_outbreak), outbreak_frequency = n_outbreaks / as.numeric(Sys.Date() - min(last_outbreak)))
 
+species_data$genus_species <- as.factor(species_data$genus_species)
+species_data$State <- as.factor(species_data$State)
 
+data_split2 <- initial_split(species_data, prop = 0.75)
+species_train_data <- training(data_split2)
+species_test_data  <- testing(data_split2)
 
-##Model 2 - 
+species_recipe <- recipe(genus_species ~ avg_days_between + sd_days_between + days_since_last + n_outbreaks + outbreak_frequency + State, data = species_train_data) %>%
+  step_novel(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_zv(all_predictors()) %>%
+  step_normalize(all_numeric_predictors())
 
+##Model 1 - Random Forest
+rf_species_spec <- rand_forest() %>% set_engine("ranger", seed = rngseed) %>% set_mode("classification")
+rf_species_workflow <- workflow() %>% add_recipe(species_recipe) %>% add_model(rf_species_spec)
+rf_species_fit <- rf_species_workflow %>% fit(data = species_train_data)
+predict_rf_species <- predict(rf_species_fit, new_data = species_train_data) %>% bind_cols(species_train_data %>% select(genus_species))
+metrics_rf_species <- metric_set(yardstick::accuracy)(predict_rf_species, truth = genus_species, estimate = .pred_class)
+print(metrics_rf_species) #accuracy 0.939
 
+#CV
+cv_folds <- vfold_cv(species_train_data, v = 10)
+rf_species_tune <- rand_forest(trees = tune(), mtry = tune(), min_n = tune()) %>% set_engine("ranger", seed = rngseed) %>% set_mode("classification")
+rf_species_tune_wf <- workflow() %>% add_recipe(species_recipe) %>% add_model(rf_species_tune)
+rf_species_grid <- grid_regular(mtry(range = c(2, 5)), trees(range = c(100, 500)), min_n(range = c(2, 10)), levels = 3)
+rf_species_cv <- tune_grid(rf_species_tune_wf, resamples = cv_folds, grid = rf_species_grid, metrics = metric_set(yardstick::accuracy))
+collect_metrics(rf_species_cv) #accuracy 0.3xx
 
-##Model 3 - 
+#Pick best CV for predictions
+best_rf_species_cv <- select_best(rf_species_cv, metric = "accuracy")
+final_rf_species <- finalize_workflow(rf_species_workflow, best_rf_species_cv)
+rf_species_best <- fit(final_rf_species, data = species_train_data)
+train_predict_rf_species <- predict(rf_species_best, new_data = species_train_data) %>% bind_cols(species_train_data %>% select(genus_species)) %>% mutate(dataset = "Train")
+metrics_train_rf_species <- train_predict_rf_species %>% metric_set(yardstick::accuracy)(train_predict_rf_species,truth = genus_species, estimate = .pred_class)
+print(metrics_train_rf_species) #now 0.939
 
+#Evaluate with test data 
+test_predict_rf_species <- predict(rf_species_best, new_data = species_test_data) %>% bind_cols(species_test_data) %>% mutate(dataset = "Test")
+metrics_test_rf_species <- test_predict_rf_species %>% metric_set(yardstick::accuracy)(test_predict_rf_species,truth = genus_species, estimate = .pred_class)
+print(metrics_test_rf_species) #oof only 0.545
 
+##Model 2 - SVM 
+svm_species_spec <- svm_linear(cost = 1) %>% set_engine("LiblineaR") %>% set_mode("classification")
+svm_species_workflow <- workflow() %>% add_recipe(species_recipe) %>% add_model(svm_species_spec)
+svm_species_fit <- svm_species_workflow %>% fit(data = species_train_data)
+predict_svm_species <- predict(svm_species_fit, new_data = species_train_data) %>% bind_cols(species_train_data %>% select(genus_species))
+metrics_svm_species <- metric_set(yardstick::accuracy)(predict_svm_species, truth = genus_species, estimate = .pred_class)
+print(metrics_rf_species) #accuracty 0.939
+
+#CV
+cv_folds <- vfold_cv(species_train_data, v = 10)
+svm_species_tune <- svm_linear(cost = tune()) %>% set_engine("LiblineaR") %>% set_mode("classification")
+svm_species_tune_wf <- workflow() %>% add_recipe(species_recipe) %>% add_model(svm_species_tune)
+svm_species_grid <- grid_regular(cost(range = c(-3, 2)), levels = 5)
+svm_species_cv <- tune_grid(svm_species_tune_wf, resamples = cv_folds, grid = svm_species_grid, metrics = metric_set(yardstick::accuracy))
+collect_metrics(svm_species_cv) #accuracy only 0.212
+
+#Pick best CV for predictions
+best_svm_species_cv <- select_best(svm_species_cv, metric = "accuracy")
+final_svm_species <- finalize_workflow(svm_species_workflow, best_svm_species_cv)
+svm_species_best <- fit(final_svm_species, data = species_train_data)
+train_predict_svm_species <- predict(svm_species_best, new_data = species_train_data) %>% bind_cols(species_train_data %>% select(genus_species)) %>% mutate(dataset = "Train")
+metrics_train_svm_species <- train_predict_svm_species %>% metric_set(yardstick::accuracy)(train_predict_svm_species, truth = genus_species, estimate = .pred_class)
+print(metrics_train_svm_species) #accuracy 0.826
+
+#Evaluate with test data 
+test_predict_svm_species <- predict(svm_species_best, new_data = species_test_data) %>% bind_cols(species_test_data) %>% mutate(dataset = "Test")
+metrics_test_svm_species <- test_predict_svm_species %>% metric_set(yardstick::accuracy)(test_predict_svm_species,truth = genus_species, estimate = .pred_class)
+print(metrics_test_svm_species) #oof only 0.273
+
+##Model 3 - Logistic Regression
+mn_species_spec <- multinom_reg(penalty = tune(1)) %>% set_mode("classification")
+mn_species_workflow <- workflow() %>% add_recipe(species_recipe) %>% add_model(log_species_spec)
+mn_species_fit <- log_species_workflow %>% fit(data = species_train_data)
+predict_mn_species <- predict(mn_species_fit, new_data = species_train_data) %>% bind_cols(species_train_data %>% select(genus_species))
+metrics_nm_species <- metric_set(yardstick::accuracy)(predict_mn_species, truth = genus_species, estimate = .pred_class)
+print(metrics_nm_species) #accuracy 1, huh
+
+#CV
+cv_folds <- vfold_cv(species_train_data, v = 10)
+mn_species_tune <- multinom_reg(penalty = tune()) %>% set_mode("classification")
+mn_species_tune_wf <- workflow() %>% add_recipe(species_recipe) %>% add_model(mn_species_tune)
+mn_species_grid <- expand.grid(decay = tune(), size = tune())
+mn_species_cv <- tune_grid(mn_species_tune_wf, resamples = cv_folds, grid = mn_species_grid, metrics = metric_set(yardstick::accuracy))
+collect_metrics(mn_species_cv) #accuracy 0.228
+
+#Pick best CV for predictions
+best_mn_species_cv <- select_best(mn_species_cv, metric = "accuracy")
+final_mn_species <- finalize_workflow(mn_species_workflow, best_mn_species_cv)
+mn_species_best <- fit(final_mn_species, data = species_train_data)
+train_predict_mn_species <- predict(mn_species_best, new_data = species_train_data) %>% bind_cols(species_train_data %>% select(genus_species)) %>% mutate(dataset = "Train")
+metrics_train_mn_species <- train_predict_mn_species %>% metric_set(yardstick::accuracy)(train_predict_mn_species, truth = genus_species, estimate = .pred_class)
+print(metrics_train_mn_species) #accuracy 1, huh
+
+#Evaluate with test data 
+test_predict_mn_species <- predict(mn_species_best, new_data = species_test_data) %>% bind_cols(species_test_data) %>% mutate(dataset = "Test")
+metrics_test_mn_species <- test_predict_mn_species %>% metric_set(yardstick::accuracy)(test_predict_mn_species,truth = genus_species, estimate = .pred_class) 
+print(metrics_test_mn_species) #oof only 0.205, yikes again
 
 ```
 
