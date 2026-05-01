@@ -62,7 +62,7 @@ mydata_clean <- mydata %>% mutate(date = make_date(Year, Month, 1)) %>%
 First question - predict WHEN the next outbreak will be 
 
 ```{r}
-##Patterns and predictions of time based on states
+##Patterns and predictions of time based on states (lag = past time points)
 time_data <- mydata_clean %>% filter(is_outbreak == 1) %>% arrange(State, genus_species, date) %>%  group_by(State, genus_species) %>% mutate(days_since_last = as.numeric(date - lag(date))) %>% summarise(avg_days_between = mean(days_since_last, na.rm = TRUE), , sd_days_between = sd(days_since_last, na.rm = TRUE), last_outbreak = max(date), n_outbreaks = n(), .groups = "drop") %>% mutate(predicted_next = last_outbreak + avg_days_between, lower_bound = last_outbreak + avg_days_between - sd_days_between, upper_bound = last_outbreak + avg_days_between + sd_days_between) %>% drop_na()
 
 time_data$predicted_next <- as.numeric(time_data$predicted_next)
@@ -76,13 +76,13 @@ time_test_data  <- testing(data_split)
 
 outbreak_time_recipe <- recipe(predicted_next ~ avg_days_between + sd_days_between + last_outbreak + n_outbreaks + State + genus_species, data = time_train_data) %>% step_novel(all_nominal_predictors()) %>% step_dummy(all_nominal_predictors()) %>% step_zv(all_predictors()) %>% step_normalize(all_numeric_predictors())
 
-##Model 1 - Random Forest (lag = past time points)
+##Model 1 - Random Forest 
 rf_time_spec <- rand_forest() %>% set_engine("ranger", seed = rngseed) %>% set_mode("regression")
 rf_time_workflow <- workflow() %>% add_recipe(outbreak_time_recipe) %>% add_model(rf_time_spec)
 rf_time_fit <- rf_time_workflow %>% fit(data = time_train_data)
 predict_rf_time <- predict(rf_time_fit, new_data = time_train_data) %>% bind_cols(time_train_data %>% select(predicted_next))
 metrics_rf_time <- predict_rf_time %>% metrics(truth = predicted_next, estimate = .pred) 
-print(metrics_rf_time) #rmse 81.3, 0.973
+print(metrics_rf_time) #rmse 107, rsq 0.991
 
 #CV
 cv_folds <- vfold_cv(time_train_data, v = 10)
@@ -90,7 +90,7 @@ rf_time_tune <- rand_forest(trees = tune(), mtry = tune(), min_n = tune()) %>% s
 rf_time_tune_wf <- workflow() %>% add_recipe(outbreak_time_recipe) %>% add_model(rf_time_tune)
 rf_time_grid <- grid_regular(mtry(range = c(2, 8)), trees(range = c(100, 1000)), min_n(range = c(2, 10)), levels = 3)
 rf_time_cv <- tune_grid(rf_time_tune_wf, resamples = cv_folds, grid = rf_time_grid, metrics = metric_set(yardstick::rmse, rsq))
-collect_metrics(rf_time_cv) #rmse 251-257, 0.8xx
+collect_metrics(rf_time_cv) #rmse 62x, rsq 0.7xx
 
 #Pick best CV for predictions
 best_rf_time_cv <- select_best(rf_time_cv, metric = "rmse")
@@ -98,12 +98,12 @@ final_rf_time <- finalize_workflow(rf_time_workflow, best_rf_time_cv)
 rf_time_best <- fit(final_rf_time, data = time_train_data)
 train_predict_rf_time <- predict(rf_time_best, new_data = time_train_data) %>% bind_cols(time_train_data %>% select(predicted_next)) %>% mutate(dataset = "Train")
 metrics_train_rf_time <- train_predict_rf_time %>% metrics(truth = predicted_next, estimate = .pred)
-print(metrics_train_rf_time) #only 81.3, 0.973
+print(metrics_train_rf_time) #only 107, rsq 0.991
 
 #Evaluate with test data 
 test_predict_rf_time <- predict(rf_time_best, new_data = time_test_data) %>% bind_cols(time_test_data) %>% mutate(dataset = "Test")
 metrics_test_rf_time <- test_predict_rf_time %>% metrics(truth = predicted_next, estimate = .pred)
-print(metrics_test_rf_time) #at 147, 0.901
+print(metrics_test_rf_time) #at 155, 0.980
 
 combined_predict_rf_time <- bind_rows(train_predict_rf_time, test_predict_rf_time)
 ggplot(combined_predict_rf_time, aes(x = predicted_next, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "Predicted vs Observed: Training and Test Data") #Nice
@@ -114,7 +114,7 @@ knn_time_workflow <- workflow() %>% add_recipe(outbreak_time_recipe) %>% add_mod
 knn_time_fit <- knn_time_workflow %>% fit(data = time_train_data)
 predict_knn_time <- predict(knn_time_fit, new_data = time_train_data) %>% bind_cols(time_train_data %>% select(predicted_next))
 metrics_knn_time <- predict_knn_time %>% metrics(truth = predicted_next, estimate = .pred) 
-print(metrics_knn_time) #start 169, 0.882
+print(metrics_knn_time) #start 300, rsq 0.906
 
 #CV
 cv_folds <- vfold_cv(time_train_data, v = 10)
@@ -122,7 +122,7 @@ knn_time_tune <- nearest_neighbor(neighbors = tune(), weight_func = tune(), dist
 knn_time_tune_wf <- workflow() %>% add_recipe(outbreak_time_recipe) %>% add_model(knn_time_tune)
 knn_time_grid <- grid_regular(neighbors(range = c(5, 50)), weight_func(values = c("rectangular", "triangular", "gaussian")), dist_power(range = c(1, 2)), levels = 3)
 knn_time_cv <- tune_grid(knn_time_tune_wf, resamples = cv_folds, grid = knn_time_grid, metrics = metric_set(yardstick::rmse, rsq))
-collect_metrics(knn_time_cv) #now 256-321, 0.321-587
+collect_metrics(knn_time_cv) #now 496-652, 0.510-686
 
 #Pick best CV for predictions
 best_knn_time_cv <- select_best(knn_time_cv, metric = "rmse")
@@ -130,12 +130,12 @@ final_knn_time <- finalize_workflow(knn_time_workflow, best_knn_time_cv)
 knn_time_best <- fit(final_knn_time, data = time_train_data)
 train_predict_knn_time <- predict(knn_time_best, new_data = time_train_data) %>% bind_cols(time_train_data %>% select(predicted_next)) %>% mutate(dataset = "Train")
 metrics_train_knn_time <- train_predict_knn_time %>% metrics(truth = predicted_next, estimate = .pred)
-print(metrics_train_knn_time) #new 169, 0.882
+print(metrics_train_knn_time) #new 300, rsq 0.906
 
 #Evaluate with test data 
 test_predict_knn_time <- predict(knn_time_best, new_data = time_test_data) %>% bind_cols(time_test_data) %>% mutate(dataset = "Test")
 metrics_test_knn_time <- test_predict_knn_time %>% metrics(truth = predicted_next, estimate = .pred)
-print(metrics_test_knn_time) #oof 384, 0.0968
+print(metrics_test_knn_time) #oof 605, 0.546
 
 combined_predict_knn_time <- bind_rows(train_predict_knn_time, test_predict_knn_time)
 ggplot(combined_predict_knn_time, aes(x = predicted_next, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "Predicted vs Observed: Training and Test Data") #yeah, definitely worse than the random forest
@@ -146,7 +146,7 @@ xgb_time_workflow <- workflow() %>% add_recipe(outbreak_time_recipe) %>% add_mod
 xgb_time_fit <- xgb_time_workflow %>% fit(data = time_train_data)
 predict_xgb_time <- predict(xgb_time_fit, new_data = time_train_data) %>% bind_cols(time_train_data %>% select(predicted_next))
 metrics_xgb_time <- predict_xgb_time %>% metrics(truth = predicted_next, estimate = .pred) 
-print(metrics_xgb_time) #only 10.3, 1.000 niiiice what 
+print(metrics_xgb_time) #only 15.9, 1.000 niiiice what 
 
 #CV
 cv_folds <- vfold_cv(time_train_data, v = 10)
@@ -154,7 +154,7 @@ xgb_time_tune <- boost_tree(trees = tune(), tree_depth = tune(), min_n = tune(),
 xgb_time_tune_wf <- workflow() %>% add_recipe(outbreak_time_recipe) %>% add_model(xgb_time_tune)
 xgb_time_grid <- grid_space_filling(trees(range = c(100, 1000)), tree_depth(range = c(3, 10)), min_n(range = c(2, 20)), loss_reduction(range = c(-5, 2)), learn_rate(range = c(-3, -0.5)), size = 20)
 xgb_time_cv <- tune_grid(xgb_time_tune_wf, resamples = cv_folds, grid = xgb_time_grid, metrics = metric_set(yardstick::rmse, rsq))
-collect_metrics(xgb_time_cv) #57.7-298, 0.9xxx
+collect_metrics(xgb_time_cv) #rmse 28.7-665, rsq 0.99x
 
 #Pick best CV for predictions
 best_xgb_time_cv <- select_best(xgb_time_cv, metric = "rmse")
@@ -162,12 +162,12 @@ final_xgb_time <- finalize_workflow(xgb_time_workflow, best_xgb_time_cv)
 xgb_time_best <- fit(final_xgb_time, data = time_train_data)
 train_predict_xgb_time <- predict(xgb_time_best, new_data = time_train_data) %>% bind_cols(time_train_data %>% select(predicted_next)) %>% mutate(dataset = "Train")
 metrics_train_xgb_time <- train_predict_xgb_time %>% metrics(truth = predicted_next, estimate = .pred)
-print(metrics_train_xgb_time) #yay still 10.3, 1.000
+print(metrics_train_xgb_time) #yay still 15.9, rsq 1.000
 
 #Evaluate with test data 
 test_predict_xgb_time <- predict(xgb_time_best, new_data = time_test_data) %>% bind_cols(time_test_data) %>% mutate(dataset = "Test")
 metrics_test_xgb_time <- test_predict_xgb_time %>% metrics(truth = predicted_next, estimate = .pred)
-print(metrics_test_xgb_time) #still very good 55.0, 0.985
+print(metrics_test_xgb_time) #still very good 34.8, rsq 0.999
 
 combined_predict_xgb_time <- bind_rows(train_predict_xgb_time, test_predict_xgb_time)
 ggplot(combined_predict_xgb_time, aes(x = predicted_next, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "Predicted vs Observed: Training and Test Data") #gorgeous, best one 
@@ -194,20 +194,20 @@ species_recipe <- recipe(genus_species ~ avg_days_between + sd_days_between + da
   step_normalize(all_numeric_predictors())
 
 ##Model 1 - Random Forest
-rf_species_spec <- rand_forest() %>% set_engine("ranger", seed = rngseed) %>% set_mode("classification")
+rf_species_spec <- rand_forest() %>% set_engine("ranger") %>% set_mode("classification")
 rf_species_workflow <- workflow() %>% add_recipe(species_recipe) %>% add_model(rf_species_spec)
 rf_species_fit <- rf_species_workflow %>% fit(data = species_train_data)
 predict_rf_species <- predict(rf_species_fit, new_data = species_train_data) %>% bind_cols(species_train_data %>% select(genus_species))
 metrics_rf_species <- metric_set(yardstick::accuracy)(predict_rf_species, truth = genus_species, estimate = .pred_class)
-print(metrics_rf_species) #accuracy 0.939
+print(metrics_rf_species) #accuracy 0.982
 
 #CV
 cv_folds <- vfold_cv(species_train_data, v = 10)
-rf_species_tune <- rand_forest(trees = tune(), mtry = tune(), min_n = tune()) %>% set_engine("ranger", seed = rngseed) %>% set_mode("classification")
+rf_species_tune <- rand_forest(trees = tune(), mtry = tune(), min_n = tune()) %>% set_engine("ranger") %>% set_mode("classification")
 rf_species_tune_wf <- workflow() %>% add_recipe(species_recipe) %>% add_model(rf_species_tune)
 rf_species_grid <- grid_regular(mtry(range = c(2, 5)), trees(range = c(100, 500)), min_n(range = c(2, 10)), levels = 3)
 rf_species_cv <- tune_grid(rf_species_tune_wf, resamples = cv_folds, grid = rf_species_grid, metrics = metric_set(yardstick::accuracy))
-collect_metrics(rf_species_cv) #accuracy 0.3xx
+collect_metrics(rf_species_cv) #accuracy 0.07xx, woof
 
 #Pick best CV for predictions
 best_rf_species_cv <- select_best(rf_species_cv, metric = "accuracy")
@@ -215,12 +215,12 @@ final_rf_species <- finalize_workflow(rf_species_workflow, best_rf_species_cv)
 rf_species_best <- fit(final_rf_species, data = species_train_data)
 train_predict_rf_species <- predict(rf_species_best, new_data = species_train_data) %>% bind_cols(species_train_data %>% select(genus_species)) %>% mutate(dataset = "Train")
 metrics_train_rf_species <- train_predict_rf_species %>% metric_set(yardstick::accuracy)(train_predict_rf_species,truth = genus_species, estimate = .pred_class)
-print(metrics_train_rf_species) #now 0.939
+print(metrics_train_rf_species) #now 0.982
 
 #Evaluate with test data 
 test_predict_rf_species <- predict(rf_species_best, new_data = species_test_data) %>% bind_cols(species_test_data) %>% mutate(dataset = "Test")
 metrics_test_rf_species <- test_predict_rf_species %>% metric_set(yardstick::accuracy)(test_predict_rf_species,truth = genus_species, estimate = .pred_class)
-print(metrics_test_rf_species) #oof only 0.545
+print(metrics_test_rf_species) #oof only 0.140
 
 ##Model 2 - SVM 
 svm_species_spec <- svm_linear(cost = 1) %>% set_engine("LiblineaR") %>% set_mode("classification")
@@ -228,7 +228,7 @@ svm_species_workflow <- workflow() %>% add_recipe(species_recipe) %>% add_model(
 svm_species_fit <- svm_species_workflow %>% fit(data = species_train_data)
 predict_svm_species <- predict(svm_species_fit, new_data = species_train_data) %>% bind_cols(species_train_data %>% select(genus_species))
 metrics_svm_species <- metric_set(yardstick::accuracy)(predict_svm_species, truth = genus_species, estimate = .pred_class)
-print(metrics_rf_species) #accuracty 0.939
+print(metrics_rf_species) #accuracty 0.982
 
 #CV
 cv_folds <- vfold_cv(species_train_data, v = 10)
@@ -236,7 +236,7 @@ svm_species_tune <- svm_linear(cost = tune()) %>% set_engine("LiblineaR") %>% se
 svm_species_tune_wf <- workflow() %>% add_recipe(species_recipe) %>% add_model(svm_species_tune)
 svm_species_grid <- grid_regular(cost(range = c(-3, 2)), levels = 5)
 svm_species_cv <- tune_grid(svm_species_tune_wf, resamples = cv_folds, grid = svm_species_grid, metrics = metric_set(yardstick::accuracy))
-collect_metrics(svm_species_cv) #accuracy only 0.212
+collect_metrics(svm_species_cv) #accuracy only 0.04x yikes
 
 #Pick best CV for predictions
 best_svm_species_cv <- select_best(svm_species_cv, metric = "accuracy")
@@ -244,20 +244,20 @@ final_svm_species <- finalize_workflow(svm_species_workflow, best_svm_species_cv
 svm_species_best <- fit(final_svm_species, data = species_train_data)
 train_predict_svm_species <- predict(svm_species_best, new_data = species_train_data) %>% bind_cols(species_train_data %>% select(genus_species)) %>% mutate(dataset = "Train")
 metrics_train_svm_species <- train_predict_svm_species %>% metric_set(yardstick::accuracy)(train_predict_svm_species, truth = genus_species, estimate = .pred_class)
-print(metrics_train_svm_species) #accuracy 0.826
+print(metrics_train_svm_species) #accuracy 0.279
 
 #Evaluate with test data 
 test_predict_svm_species <- predict(svm_species_best, new_data = species_test_data) %>% bind_cols(species_test_data) %>% mutate(dataset = "Test")
 metrics_test_svm_species <- test_predict_svm_species %>% metric_set(yardstick::accuracy)(test_predict_svm_species,truth = genus_species, estimate = .pred_class)
-print(metrics_test_svm_species) #oof only 0.273
+print(metrics_test_svm_species) #oof only 0.0247
 
-##Model 3 - Logistic Regression
-mn_species_spec <- multinom_reg(penalty = tune(1)) %>% set_mode("classification")
-mn_species_workflow <- workflow() %>% add_recipe(species_recipe) %>% add_model(log_species_spec)
-mn_species_fit <- log_species_workflow %>% fit(data = species_train_data)
+##Model 3 - Multinomial Regression
+mn_species_spec <- multinom_reg(penalty = 1) %>% set_engine("nnet", MaxNWts = 7000) %>% set_mode("classification")
+mn_species_workflow <- workflow() %>% add_recipe(species_recipe) %>% add_model(mn_species_spec)
+mn_species_fit <- mn_species_workflow %>% fit(data = species_train_data)
 predict_mn_species <- predict(mn_species_fit, new_data = species_train_data) %>% bind_cols(species_train_data %>% select(genus_species))
 metrics_nm_species <- metric_set(yardstick::accuracy)(predict_mn_species, truth = genus_species, estimate = .pred_class)
-print(metrics_nm_species) #accuracy 1, huh
+print(metrics_nm_species) #accuracy 0.288, huh
 
 #CV
 cv_folds <- vfold_cv(species_train_data, v = 10)
@@ -273,25 +273,89 @@ final_mn_species <- finalize_workflow(mn_species_workflow, best_mn_species_cv)
 mn_species_best <- fit(final_mn_species, data = species_train_data)
 train_predict_mn_species <- predict(mn_species_best, new_data = species_train_data) %>% bind_cols(species_train_data %>% select(genus_species)) %>% mutate(dataset = "Train")
 metrics_train_mn_species <- train_predict_mn_species %>% metric_set(yardstick::accuracy)(train_predict_mn_species, truth = genus_species, estimate = .pred_class)
-print(metrics_train_mn_species) #accuracy 1, huh
+print(metrics_train_mn_species) #accuracy 0.288, huh
 
 #Evaluate with test data 
 test_predict_mn_species <- predict(mn_species_best, new_data = species_test_data) %>% bind_cols(species_test_data) %>% mutate(dataset = "Test")
 metrics_test_mn_species <- test_predict_mn_species %>% metric_set(yardstick::accuracy)(test_predict_mn_species,truth = genus_species, estimate = .pred_class) 
-print(metrics_test_mn_species) #oof only 0.205, yikes again
+print(metrics_test_mn_species) #oof only 0.0192, yikes again
 
 ```
 
 Third question - WHETHER it will have AMR
 
 ```{r}
-##Model 1 - 
+##Data Prep - so unfortuntely I think I have to go back to the rawdata to get data from outbreak sequences that don't have antimicrobial resistance
+resistance_data <- mydata_clean %>% arrange(date) %>% mutate(has_resistance = ifelse(`Number of Outbreak Isolates with antimicrobial resistance` > 0, 1, 0), genus_species = as.factor(genus_species), State = as.factor(State), resistance_proportion = ifelse(`Outbreak associated isolates` > 0, `Number of Outbreak Isolates with antimicrobial resistance` / `Outbreak associated isolates`, 0))
 
+resistance_data$has_resistance[is.na(resistance_data$has_resistance)] <- 0
+resistance_data$`Number of Outbreak Isolates with antimicrobial resistance`[is.na(resistance_data$`Number of Outbreak Isolates with antimicrobial resistance`)] <- 0
+resistance_data$resistance_proportion[is.na(resistance_data$resistance_proportion)] <- 0
+resistance_data$has_resistance <- as.factor(resistance_data$has_resistance)
 
+data_split3 <- initial_split(resistance_data, prop = 0.75)
+resistance_train_data <- training(data_split3)
+resistance_test_data <- testing(data_split3)
 
-##Model 2 - 
+resistance_recipe <- recipe(has_resistance ~ resistance_proportion + State + genus_species, data = resistance_train_data) %>% step_novel(all_nominal_predictors()) %>% step_dummy(all_nominal_predictors()) %>% step_zv(all_predictors()) %>% step_normalize(all_numeric_predictors())
 
+##Model 1 - Logistic Regression
+log_resistance_spec <- logistic_reg(penalty = 1) %>% set_engine("glmnet") %>% set_mode("classification")
+log_resistance_workflow <- workflow() %>% add_recipe(resistance_recipe) %>% add_model(log_resistance_spec)
+log_resistance_fit <- log_resistance_workflow %>% fit(data = resistance_train_data)
+predict_log_resistance <- predict(log_resistance_fit, new_data = resistance_train_data) %>% bind_cols(resistance_train_data %>% select(has_resistance))
+metrics_log_resistance <- metric_set(yardstick::accuracy)(predict_log_resistance,truth = has_resistance, estimate = .pred_class) 
+print(metrics_log_resistance) #accuracy 0.896
 
+#CV
+cv_folds <- vfold_cv(resistance_train_data, v = 10)
+log_resistance_tune <- logistic_reg(penalty = tune(), mixture = tune()) %>% set_engine("glmnet") %>% set_mode("classification")
+log_resistance_tune_wf <- workflow() %>% add_recipe(resistance_recipe) %>% add_model(log_resistance_tune)
+log_resistance_grid <- grid_regular(penalty(), mixture(), levels = 5)
+log_resistance_cv <- tune_grid(log_resistance_tune_wf, resamples = cv_folds, grid = log_resistance_grid, metrics = metric_set(yardstick::accuracy))
+collect_metrics(log_resistance_cv) #accuracy 0.9xx-1
+
+#Pick best CV for predictions
+best_log_resistance_cv <- select_best(log_resistance_cv, metric = "accuracy")
+final_log_resistance <- finalize_workflow(log_resistance_workflow, best_log_resistance_cv)
+log_resistance_best <- fit(final_log_resistance, data = resistance_train_data)
+train_predict_log_resistance <- predict(log_resistance_best, new_data = resistance_train_data) %>% bind_cols(resistance_train_data %>% select(has_resistance)) %>% mutate(dataset = "Train")
+metrics_train_log_resistance <- train_predict_log_resistance %>% metric_set(yardstick::accuracy)(train_predict_log_resistance, truth = has_resistance, estimate = .pred_class)
+print(metrics_train_log_resistance) #accuracy 0.896
+
+#Evaluate with test data 
+test_predict_log_resistance <- predict(log_resistance_best, new_data = resistance_test_data) %>% bind_cols(resistance_test_data) %>% mutate(dataset = "Test")
+metrics_test_log_resistance <- test_predict_log_resistance %>% metric_set(yardstick::accuracy)(test_predict_log_resistance,truth = has_resistance, estimate = .pred_class) 
+print(metrics_test_log_resistance) #accuracy 0.892
+
+##Model 2 - Random Forest
+rf_resistance_spec <- rand_forest() %>% set_engine("ranger") %>% set_mode("classification")
+rf_resistance_workflow <- workflow() %>% add_recipe(resistance_recipe) %>% add_model(rf_resistance_spec)
+rf_resistance_fit <- rf_resistance_workflow %>% fit(data = resistance_train_data)
+predict_rf_resistance <- predict(rf_resistance_fit, new_data = resistance_train_data) %>% bind_cols(resistance_train_data %>% select(has_resistance))
+metrics_rf_resistance <- metric_set(yardstick::accuracy)(predict_rf_resistance, truth = has_resistance, estimate = .pred_class)
+print(metrics_rf_resistance) #accuracy 1, nice
+
+#CV
+cv_folds <- vfold_cv(resistance_train_data, v = 10)
+rf_resistance_tune <- rand_forest(trees = tune(), mtry = tune(), min_n = tune()) %>% set_engine("ranger") %>% set_mode("classification")
+rf_resistance_tune_wf <- workflow() %>% add_recipe(resistance_recipe) %>% add_model(rf_resistance_tune)
+rf_resistance_grid <- grid_regular(mtry(range = c(2, 5)), trees(range = c(100, 500)), min_n(range = c(2, 10)), levels = 3)
+rf_resistance_cv <- tune_grid(rf_resistance_tune_wf, resamples = cv_folds, grid = rf_resistance_grid, metrics = metric_set(yardstick::accuracy))
+collect_metrics(rf_resistance_cv) #accuracy 0.
+
+#Pick best CV for predictions
+best_rf_resistance_cv <- select_best(rf_resistance_cv, metric = "accuracy")
+final_rf_resistance <- finalize_workflow(rf_resistance_workflow, best_rf_resistance_cv)
+rf_resistance_best <- fit(final_rf_resistance, data = resistance_train_data)
+train_predict_rf_resistance <- predict(rf_resistance_best, new_data = resistance_train_data) %>% bind_cols(resistance_train_data %>% select(has_resistance)) %>% mutate(dataset = "Train")
+metrics_train_rf_resistance <- train_predict_rf_resistance %>% metric_set(yardstick::accuracy)(train_predict_rf_resistance,truth = has_resistance, estimate = .pred_class)
+print(metrics_train_rf_resistance) #now 0.
+
+#Evaluate with test data 
+test_predict_rf_resistance <- predict(rf_resistance_best, new_data = resistance_test_data) %>% bind_cols(resistance_test_data) %>% mutate(dataset = "Test")
+metrics_test_rf_resistance <- test_predict_rf_resistance %>% metric_set(yardstick::accuracy)(test_predict_rf_resistance,truth = has_resistance, estimate = .pred_class)
+print(metrics_test_rf_resistance)
 
 ##Model 3 - 
 

@@ -65,22 +65,22 @@ The dataframe oai_rows_data contains rows that have data in the Outbreak associa
 
 ```{r}
 ##% Isolates with clinically important antimicrobial resistance column
-pcia_rows_data <- oai_rows_data %>%
-  filter(complete.cases(oai_rows_data$`% Isolates with clinically important antimicrobial resistance`))
+##pcia_rows_data <- oai_rows_data %>%
+  #filter(complete.cases(oai_rows_data$`% Isolates with clinically important antimicrobial resistance`))
 
-print(pcia_rows_data) #2,118 rows actually have data
+#print(pcia_rows_data) #2,118 rows actually have data
 ```
 
-For the questions I am specifically asking in this project, I want to know not just about the outbreak strains themselves, but specifically the ones that show antimicrobial resisant properties, so I will be using this dataset moving forward to make sure all my pathogens/outbreaks of interest have this property. With this being a percent, I will probably want to add a column that has information about NUMBER of isolates with antimicrobial resistance. 
+For the questions I am specifically asking in this project, I want to know not just about the outbreak strains themselves, but specifically the ones that show antimicrobial resisant properties, so I will be using this dataset moving forward to make sure all my pathogens/outbreaks of interest have this property. With this being a percent, I will probably want to add a column that has information about NUMBER of isolates with antimicrobial resistance. 4/30/26 - actually commented this part out because looking back, it was limiting the questions I could ask of my models
 
 ```{r}
 ##Add a column to subset from outbreak associated isolates with antimicrobial resistance (Outbreaks with antimicrobial resistance)
-owar_data <- pcia_rows_data %>% mutate(`Number of Outbreak Isolates with antimicrobial resistance` = `Outbreak associated isolates`*((`% Isolates with clinically important antimicrobial resistance`)/100))
+owar_data <- oai_rows_data %>% mutate(`Number of Outbreak Isolates with antimicrobial resistance` = `Outbreak associated isolates`*((`% Isolates with clinically important antimicrobial resistance`)/100))
 
-print(owar_data) #2,118 rows and 14 columns, it worked
+print(owar_data) #20,218 rows and 14 columns, it worked
 ```
 
-Okay new dataframe owar_data, I have that column with number of isolates with antimicrobial resistance. Looking at it, why are the numbers so small??
+Okay new dataframe owar_data, I have that column with number of isolates with antimicrobial resistance. Looking at it, why are the numbers so small?? - Agin 4/30/26 - I changed this to ignore that intermediate dataframe
 
 ```{r}
 ##New multistate outbreaks column 
