@@ -4,8 +4,6 @@ date: "2026-04-29"
 output: html_document
 ---
 
-# Setup
-
 Load needed packages, make sure they are installed.
 
 ```{r}
@@ -285,7 +283,7 @@ print(metrics_test_mn_species) #oof only 0.0192, yikes again
 Third question - WHETHER it will have AMR
 
 ```{r}
-##Data Prep - so unfortuntely I think I have to go back to the rawdata to get data from outbreak sequences that don't have antimicrobial resistance
+##Data Prep 
 resistance_data <- mydata_clean %>% arrange(date) %>% mutate(has_resistance = ifelse(`Number of Outbreak Isolates with antimicrobial resistance` > 0, 1, 0), genus_species = as.factor(genus_species), State = as.factor(State), resistance_proportion = ifelse(`Outbreak associated isolates` > 0, `Number of Outbreak Isolates with antimicrobial resistance` / `Outbreak associated isolates`, 0))
 
 resistance_data$has_resistance[is.na(resistance_data$has_resistance)] <- 0
@@ -340,9 +338,9 @@ print(metrics_rf_resistance) #accuracy 1, nice
 cv_folds <- vfold_cv(resistance_train_data, v = 10)
 rf_resistance_tune <- rand_forest(trees = tune(), mtry = tune(), min_n = tune()) %>% set_engine("ranger") %>% set_mode("classification")
 rf_resistance_tune_wf <- workflow() %>% add_recipe(resistance_recipe) %>% add_model(rf_resistance_tune)
-rf_resistance_grid <- grid_regular(mtry(range = c(2, 5)), trees(range = c(100, 500)), min_n(range = c(2, 10)), levels = 3)
+rf_resistance_grid <- grid_regular(mtry(range = c(2, 8)), trees(range = c(100, 500)), min_n(range = c(2, 10)), levels = 3)
 rf_resistance_cv <- tune_grid(rf_resistance_tune_wf, resamples = cv_folds, grid = rf_resistance_grid, metrics = metric_set(yardstick::accuracy))
-collect_metrics(rf_resistance_cv) #accuracy 0.
+collect_metrics(rf_resistance_cv) #accuracy 0.896
 
 #Pick best CV for predictions
 best_rf_resistance_cv <- select_best(rf_resistance_cv, metric = "accuracy")
@@ -350,17 +348,144 @@ final_rf_resistance <- finalize_workflow(rf_resistance_workflow, best_rf_resista
 rf_resistance_best <- fit(final_rf_resistance, data = resistance_train_data)
 train_predict_rf_resistance <- predict(rf_resistance_best, new_data = resistance_train_data) %>% bind_cols(resistance_train_data %>% select(has_resistance)) %>% mutate(dataset = "Train")
 metrics_train_rf_resistance <- train_predict_rf_resistance %>% metric_set(yardstick::accuracy)(train_predict_rf_resistance,truth = has_resistance, estimate = .pred_class)
-print(metrics_train_rf_resistance) #now 0.
+print(metrics_train_rf_resistance) #now 1
 
 #Evaluate with test data 
 test_predict_rf_resistance <- predict(rf_resistance_best, new_data = resistance_test_data) %>% bind_cols(resistance_test_data) %>% mutate(dataset = "Test")
 metrics_test_rf_resistance <- test_predict_rf_resistance %>% metric_set(yardstick::accuracy)(test_predict_rf_resistance,truth = has_resistance, estimate = .pred_class)
-print(metrics_test_rf_resistance)
+print(metrics_test_rf_resistance) #accuracy 1
 
-##Model 3 - 
+##Model 3 - XGBoost
+xgb_resistance_spec <- boost_tree() %>% set_engine("xgboost") %>% set_mode("classification")
+xgb_resistance_workflow <- workflow() %>% add_recipe(resistance_recipe) %>% add_model(xgb_resistance_spec)
+xgb_resistance_fit <- xgb_resistance_workflow %>% fit(data = resistance_train_data)
+predict_xgb_resistance <- predict(xgb_resistance_fit, new_data = resistance_train_data) %>% bind_cols(resistance_train_data %>% select(has_resistance))
+metrics_xgb_resistance <- metric_set(yardstick::accuracy)(predict_xgb_resistance,truth = has_resistance, estimate = .pred_class) 
+print(metrics_xgb_resistance) #accuracy 1
 
+#CV
+cv_folds <- vfold_cv(resistance_train_data, v = 10)
+xgb_resistance_tune <- boost_tree(trees = tune(), tree_depth = tune(), min_n = tune(), loss_reduction = tune(), learn_rate = tune()) %>% set_engine("xgboost") %>% set_mode("classification")
+xgb_resistance_tune_wf <- workflow() %>% add_recipe(resistance_recipe) %>% add_model(xgb_resistance_tune)
+xgb_resistance_grid <- grid_space_filling(trees(range = c(100, 1000)), tree_depth(range = c(3, 10)), min_n(range = c(2, 20)), loss_reduction(range = c(-5, 2)), learn_rate(range = c(-3, -0.5)), size = 20)
+xgb_resistance_cv <- tune_grid(xgb_resistance_tune_wf, resamples = cv_folds, grid = xgb_resistance_grid, metrics = metric_set(yardstick::accuracy))
+collect_metrics(xgb_resistance_cv) #0.896 - 1
 
+#Pick best CV for predictions
+best_xgb_resistance_cv <- select_best(xgb_resistance_cv, metric = "accuracy")
+final_xgb_resistance <- finalize_workflow(xgb_resistance_workflow, best_xgb_resistance_cv)
+xgb_resistance_best <- fit(final_xgb_resistance, data = resistance_train_data)
+train_predict_xgb_resistance <- predict(xgb_resistance_best, new_data = resistance_train_data) %>% bind_cols(resistance_train_data %>% select(has_resistance)) %>% mutate(dataset = "Train")
+metrics_train_xgb_resistance <- train_predict_xgb_resistance %>% metrics(truth = has_resistance, estimate = .pred_class)
+print(metrics_train_xgb_resistance) #1
+
+#Evaluate with test data 
+test_predict_xgb_resistance <- predict(xgb_resistance_best, new_data = resistance_test_data) %>% bind_cols(resistance_test_data) %>% mutate(dataset = "Test")
+metrics_test_xgb_resistance <- test_predict_xgb_resistance %>% metrics(truth = has_resistance, estimate = .pred_class)
+print(metrics_test_xgb_resistance) #1
 
 ```
 
 MAYBE do a fourth question - predict WHERE the next outbreak will be
+
+```{r}
+##Data Prep
+where_data <- mydata_clean %>% filter(is_outbreak == 1) %>% arrange(State, genus_species, date) %>%  group_by(State, genus_species) %>% summarise(last_outbreak = max(date), n_outbreaks = n(), .groups = "drop") %>% mutate(outbreak_frequency = n_outbreaks / as.numeric(Sys.Date() - min(last_outbreak)))
+
+where_data$State <- as.factor(where_data$State)
+where_data$genus_species <- as.factor(where_data$genus_species)
+
+data_split4 <- initial_split(where_data, prop = 0.75)
+where_train_data <- training(data_split4)
+where_test_data <- testing(data_split4)
+
+where_recipe <- recipe(State ~ genus_species + n_outbreaks + outbreak_frequency, data = where_train_data) %>% step_novel(all_nominal_predictors()) %>% step_dummy(all_nominal_predictors()) %>% step_zv(all_predictors()) %>% step_normalize(all_numeric_predictors())
+
+##Model 1 - Random Forest
+rf_where_spec <- rand_forest() %>% set_engine("ranger") %>% set_mode("classification")
+rf_where_workflow <- workflow() %>% add_recipe(where_recipe) %>% add_model(rf_where_spec)
+rf_where_fit <- rf_where_workflow %>% fit(data = where_train_data)
+predict_rf_where <- predict(rf_where_fit, new_data = where_train_data) %>% bind_cols(where_train_data %>% select(State))
+metrics_rf_where <- metric_set(yardstick::accuracy)(predict_rf_where, truth = State, estimate = .pred_class)
+print(metrics_rf_where) #accuracy 0.360
+
+#CV
+cv_folds <- vfold_cv(where_train_data, v = 10)
+rf_where_tune <- rand_forest(trees = tune(), mtry = tune(), min_n = tune()) %>% set_engine("ranger") %>% set_mode("classification")
+rf_where_tune_wf <- workflow() %>% add_recipe(where_recipe) %>% add_model(rf_where_tune)
+rf_where_grid <- grid_regular(mtry(range = c(2, 8)), trees(range = c(100, 500)), min_n(range = c(2, 10)), levels = 3)
+rf_where_cv <- tune_grid(rf_where_tune_wf, resamples = cv_folds, grid = rf_where_grid, metrics = metric_set(yardstick::accuracy))
+collect_metrics(rf_where_cv) #accuracy 0.001xxx, horrible
+
+#Pick best CV for predictions
+best_rf_where_cv <- select_best(rf_where_cv, metric = "accuracy")
+final_rf_where <- finalize_workflow(rf_where_workflow, best_rf_where_cv)
+rf_where_best <- fit(final_rf_where, data = where_train_data)
+train_predict_rf_where <- predict(rf_where_best, new_data = where_train_data) %>% bind_cols(where_train_data %>% select(State)) %>% mutate(dataset = "Train")
+metrics_train_rf_where <- train_predict_rf_where %>% metric_set(yardstick::accuracy)(train_predict_rf_where,truth = State, estimate = .pred_class)
+print(metrics_train_rf_where) #now 0.360
+
+#Evaluate with test data 
+test_predict_rf_where <- predict(rf_where_best, new_data = where_test_data) %>% bind_cols(where_test_data) %>% mutate(dataset = "Test")
+metrics_test_rf_where <- test_predict_rf_where %>% metric_set(yardstick::accuracy)(test_predict_rf_where,truth = State, estimate = .pred_class)
+print(metrics_test_rf_where) #accuracy 0.0127, horrible 
+
+##Model 2 - Multinomial Regression
+mn_where_spec <- multinom_reg(penalty = 1) %>% set_engine("nnet", MaxNWts = 14000) %>% set_mode("classification")
+mn_where_workflow <- workflow() %>% add_recipe(where_recipe) %>% add_model(mn_where_spec)
+mn_where_fit <- mn_where_workflow %>% fit(data = where_train_data)
+predict_mn_where <- predict(mn_where_fit, new_data = where_train_data) %>% bind_cols(where_train_data %>% select(State))
+metrics_nm_where <- metric_set(yardstick::accuracy)(predict_mn_where, truth = State, estimate = .pred_class)
+print(metrics_nm_where) #accuracy 0.136
+
+#CV - commented out because it kept giving me an error: "Error in `vec_unique_loc()`: ! Unsupported vctrs type `scalar`.ℹ In file type-info.c at line 117.ℹ Install the winch package to get additional debugging info the next time you get this error.ℹ This is an internal error that was detected in the vctrs package.Please report it at <https://github.com/r-lib/vctrs/issues> with a reprex and the full backtrace."
+#cv_folds <- vfold_cv(where_train_data, v = 10)
+#mn_where_tune <- multinom_reg(penalty = tune()) %>% set_mode("classification")
+#mn_where_tune_wf <- workflow() %>% add_recipe(where_recipe) %>% add_model(mn_where_tune)
+#mn_where_grid <- expand.grid(decay = tune(), size = tune())
+#mn_where_cv <- tune_grid(mn_where_tune_wf, resamples = cv_folds, grid = mn_where_grid, metrics = metric_set(yardstick::accuracy))
+#collect_metrics(mn_where_cv) #accuracy 
+
+#Pick best CV for predictions - same as directly above
+#best_mn_where_cv <- select_best(mn_where_cv, metric = "accuracy")
+#final_mn_where <- finalize_workflow(mn_where_workflow, best_mn_where_cv)
+#mn_where_best <- fit(final_mn_where, data = where_train_data)
+#train_predict_mn_where <- predict(mn_where_best, new_data = where_train_data) %>% bind_cols(where_train_data %>% select(State)) %>% mutate(dataset = "Train")
+#metrics_train_mn_where <- train_predict_mn_where %>% metric_set(yardstick::accuracy)(train_predict_mn_where, truth = State, estimate = .pred_class)
+#print(metrics_train_mn_where) #accuracy 
+
+#Evaluate with test data - changed from best to fit to get an answer here
+test_predict_mn_where <- predict(mn_where_fit, new_data = where_test_data) %>% bind_cols(where_test_data) %>% mutate(dataset = "Test")
+metrics_test_mn_where <- test_predict_mn_where %>% metric_set(yardstick::accuracy)(test_predict_mn_where, truth = State, estimate = .pred_class) 
+print(metrics_test_mn_where) #yikes, 0.00127
+
+##Model 3 - SVM
+svm_where_spec <- svm_linear(cost = 1) %>% set_engine("LiblineaR") %>% set_mode("classification")
+svm_where_workflow <- workflow() %>% add_recipe(where_recipe) %>% add_model(svm_where_spec)
+svm_where_fit <- svm_where_workflow %>% fit(data = where_train_data)
+predict_svm_where <- predict(svm_where_fit, new_data = where_train_data) %>% bind_cols(where_train_data %>% select(State))
+metrics_svm_where <- metric_set(yardstick::accuracy)(predict_svm_where, truth = State, estimate = .pred_class)
+print(metrics_rf_where) #accuracy 0.357
+
+#CV
+cv_folds <- vfold_cv(where_train_data, v = 10)
+svm_where_tune <- svm_linear(cost = tune()) %>% set_engine("LiblineaR") %>% set_mode("classification")
+svm_where_tune_wf <- workflow() %>% add_recipe(where_recipe) %>% add_model(svm_where_tune)
+svm_where_grid <- grid_regular(cost(range = c(-3, 2)), levels = 5)
+svm_where_cv <- tune_grid(svm_where_tune_wf, resamples = cv_folds, grid = svm_where_grid, metrics = metric_set(yardstick::accuracy))
+collect_metrics(svm_where_cv) #accuracy only 0.004, yikes
+
+#Pick best CV for predictions
+best_svm_where_cv <- select_best(svm_where_cv, metric = "accuracy")
+final_svm_where <- finalize_workflow(svm_where_workflow, best_svm_where_cv)
+svm_where_best <- fit(final_svm_where, data = where_train_data)
+train_predict_svm_where <- predict(svm_where_best, new_data = where_train_data) %>% bind_cols(where_train_data %>% select(State)) %>% mutate(dataset = "Train")
+metrics_train_svm_where <- train_predict_svm_where %>% metric_set(yardstick::accuracy)(train_predict_svm_where, truth = State, estimate = .pred_class)
+print(metrics_train_svm_where) #accuracy 0.134
+
+#Evaluate with test data 
+test_predict_svm_where <- predict(svm_where_best, new_data = where_test_data) %>% bind_cols(where_test_data) %>% mutate(dataset = "Test")
+metrics_test_svm_where <- test_predict_svm_where %>% metric_set(yardstick::accuracy)(test_predict_svm_where,truth = State, estimate = .pred_class)
+print(metrics_test_svm_where) #yikes, 0.00381
+
+```
