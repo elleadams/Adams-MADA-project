@@ -48,7 +48,7 @@ So I think first I just want to see plots, one for each year, with number of out
 year_state_subset <- mydata %>% group_by(Year, State) %>%
     summarise(isolate_count = n(), .groups = 'drop')
 ##Making faceted bar plots
-plot1 <- ggplot(plot1, aes(x = State, y = isolate_count)) +
+plot1 <- ggplot(year_state_subset, aes(x = State, y = isolate_count)) +
   geom_bar(stat = "identity", fill = "steelblue") +
   facet_wrap(~Year) + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 1, size = 4))
@@ -67,7 +67,7 @@ df_monthly <- mydata %>%
   summarise(total_isolates = sum(`Outbreak associated isolates`)) 
 ###Now making the plot
 plot2 <- ggplot(df_monthly, aes(x = date, y = total_isolates)) +
-  geom_line(color = "blue", size = 1) +
+  geom_line(color = "blue", linewidth = 1) +
   geom_point() +
   scale_x_date(date_labels = "%b %Y", date_breaks = "3 months")+ 
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
@@ -76,7 +76,7 @@ figure_file = here("results", "figures", "outbreaks-over-time.png")
 ggsave(filename = figure_file, plot = plot2) 
 ```
 
-I also want to see a genus/species breakdown of number of isolates, to see which bacterium has the most outbreaks, one per year. 
+I also want to see a genus/species breakdown of number of isolates, to see which bacterium has the most outbreaks.
 
 ```{r}
 ##To see the unique genus and species (Pathogen and Serotype/Species) combos, I need to make a new column first
@@ -107,4 +107,30 @@ ggsave(filename = figure_file, plot = plot4)
 
 figure_file = here("results", "figures", "type-outbreaks.png")
 ggsave(filename = figure_file, plot = plot5) 
+```
+
+
+```{r}
+###Need to investigate is antimicrobial resistance increasing over time, and which species are associated - this can also be looked at with just ggplot I think 
+df_anti_per_iso_time <- mydata %>% mutate(`Proportion of Outbreaks Isolates with Antimicroobial Resistance` = `Number of Outbreak Isolates with antimicrobial resistance`/`Outbreak associated isolates`) %>% 
+  mutate(genus_species = paste(Pathogen, `Serotype/Species`, sep = " ")) %>% 
+  mutate(date = make_date(Year, Month, 1)) %>%
+  group_by(date)
+  
+plot6 <- ggplot(df_anti_per_iso_time, aes(x = Year, y = `Proportion of Outbreaks Isolates with Antimicroobial Resistance`)) +
+  geom_bar(stat = "identity", fill = "steelblue") + 
+  facet_wrap(~genus_species) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+figure_file = here("results", "figures", "faceted_resistance_time_species.png")
+ggsave(filename = figure_file, plot = plot6) 
+
+df_anti_time <- mydata %>% group_by(Year) %>% mutate(Number_Anti = sum(`Number of Outbreak Isolates with antimicrobial resistance`))
+
+plot7 <- ggplot(df_anti_time, aes(x = Year, y = `Number_Anti`)) +
+  geom_line(color = "blue", linewidth = 1) +
+  geom_point()
+
+figure_file = here("results", "figures", "resistnce_over_time.png")
+ggsave(filename = figure_file, plot = plot7) 
 ```

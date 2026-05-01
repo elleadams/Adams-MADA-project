@@ -1,0 +1,210 @@
+---
+title: "Official Analysis of BEAM Outbreak Antimicrobial Isolate Data"
+date: "2026-04-29"
+output: html_document
+---
+
+# Setup
+
+Load needed packages, make sure they are installed.
+
+```{r}
+library(readr) 
+library(dplyr) 
+library(tidyverse) 
+library(skimr) 
+library(here)
+library(ggplot2)
+library(tidymodels)
+library(broom.mixed)
+library(dotwhisker)
+library(Metrics)
+library(yardstick)
+library(corrplot)
+library(glmnet)
+library(ranger)
+library(kernlab)
+library(lubridate)
+library(forecast)
+library(survival)
+library(caret)
+library(xgboost)
+library(zoo)
+library(kknn)
+library(timetk)
+```
+
+Load the data.
+
+```{r}
+#Path to data. Note the use of the here() package and not absolute paths
+data_location <- here::here("data","processed-data","processeddata.rds")
+#load data
+mydata <- readRDS(data_location)
+```
+
+
+```{r}
+###Can we predict when the next outbreak will occur, which species it will be, and whether it will have antimicrobial resistance - three different models?
+
+rngseed <- 1234
+
+#Need to make a better data frame? 
+mydata_clean <- mydata %>% mutate(date = make_date(Year, Month, 1)) %>% 
+    mutate(genus_species = paste(Pathogen, `Serotype/Species`, sep = " ")) %>% 
+    select(-c(Year, Month, `Source Type`, `Source Site`, Pathogen, `Serotype/Species`, `New multistate outbreaks`, `New multistate outbreaks - US`, `% Isolates with clinically important antimicrobial resistance`)) %>%
+    mutate(is_outbreak = ifelse(`Outbreak associated isolates` > 0, 1, 0))
+
+```
+
+First question - predict WHEN the next outbreak will be 
+
+```{r}
+##Patterns and predictions of time based on states
+time_data <- mydata_clean %>% filter(is_outbreak == 1) %>% arrange(State, genus_species, date) %>%  group_by(State, genus_species) %>% mutate(days_since_last = as.numeric(date - lag(date))) %>% summarise(avg_days_between = mean(days_since_last, na.rm = TRUE), , sd_days_between = sd(days_since_last, na.rm = TRUE), last_outbreak = max(date), n_outbreaks = n(), .groups = "drop") %>% mutate(predicted_next = last_outbreak + avg_days_between, lower_bound = last_outbreak + avg_days_between - sd_days_between, upper_bound = last_outbreak + avg_days_between + sd_days_between) %>% drop_na()
+
+time_data$predicted_next <- as.numeric(time_data$predicted_next)
+time_data$last_outbreak <- as.numeric(time_data$last_outbreak)
+
+set.seed(rngseed)
+
+data_split <- initial_split(time_data, prop = 0.75)
+time_train_data <- training(data_split)
+time_test_data  <- testing(data_split)
+
+outbreak_time_recipe <- recipe(predicted_next ~ avg_days_between + sd_days_between + last_outbreak + n_outbreaks + State + genus_species, data = time_train_data) %>% step_novel(all_nominal_predictors()) %>% step_dummy(all_nominal_predictors()) %>% step_zv(all_predictors()) %>% step_normalize(all_numeric_predictors())
+
+##Model 1 - Random Forest (lag = past time points)
+rf_time_spec <- rand_forest() %>% set_engine("ranger", seed = rngseed) %>% set_mode("regression")
+rf_time_workflow <- workflow() %>% add_recipe(outbreak_time_recipe) %>% add_model(rf_time_spec)
+rf_time_fit <- rf_time_workflow %>% fit(data = time_train_data)
+predict_rf_time <- predict(rf_time_fit, new_data = time_train_data) %>% bind_cols(time_train_data %>% select(predicted_next))
+metrics_rf_time <- predict_rf_time %>% metrics(truth = predicted_next, estimate = .pred) 
+print(metrics_rf_time) #rmse 81.3, 0.973
+
+#CV
+cv_folds <- vfold_cv(time_train_data, v = 10)
+rf_time_tune <- rand_forest(trees = tune(), mtry = tune(), min_n = tune()) %>% set_engine("ranger", seed = rngseed) %>% set_mode("regression")
+rf_time_tune_wf <- workflow() %>% add_recipe(outbreak_time_recipe) %>% add_model(rf_time_tune)
+rf_time_grid <- grid_regular(mtry(range = c(2, 8)), trees(range = c(100, 1000)), min_n(range = c(2, 10)), levels = 3)
+rf_time_cv <- tune_grid(rf_time_tune_wf, resamples = cv_folds, grid = rf_time_grid, metrics = metric_set(yardstick::rmse, rsq))
+collect_metrics(rf_time_cv) #rmse 251-257, 0.8xx
+
+#Pick best CV for predictions
+best_rf_time_cv <- select_best(rf_time_cv, metric = "rmse")
+final_rf_time <- finalize_workflow(rf_time_workflow, best_rf_time_cv)
+rf_time_best <- fit(final_rf_time, data = time_train_data)
+train_predict_rf_time <- predict(rf_time_best, new_data = time_train_data) %>% bind_cols(time_train_data %>% select(predicted_next)) %>% mutate(dataset = "Train")
+metrics_train_rf_time <- train_predict_rf_time %>% metrics(truth = predicted_next, estimate = .pred)
+print(metrics_train_rf_time) #only 81.3, 0.973
+
+#Evaluate with test data 
+test_predict_rf_time <- predict(rf_time_best, new_data = time_test_data) %>% bind_cols(time_test_data) %>% mutate(dataset = "Test")
+metrics_test_rf_time <- test_predict_rf_time %>% metrics(truth = predicted_next, estimate = .pred)
+print(metrics_test_rf_time) #at 147, 0.901
+
+combined_predict_rf_time <- bind_rows(train_predict_rf_time, test_predict_rf_time)
+ggplot(combined_predict_rf_time, aes(x = predicted_next, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "Predicted vs Observed: Training and Test Data") #Nice
+
+##Model 2 for this question - KNN
+knn_time_spec <- nearest_neighbor() %>% set_engine("kknn") %>% set_mode("regression")
+knn_time_workflow <- workflow() %>% add_recipe(outbreak_time_recipe) %>% add_model(knn_time_spec)
+knn_time_fit <- knn_time_workflow %>% fit(data = time_train_data)
+predict_knn_time <- predict(knn_time_fit, new_data = time_train_data) %>% bind_cols(time_train_data %>% select(predicted_next))
+metrics_knn_time <- predict_knn_time %>% metrics(truth = predicted_next, estimate = .pred) 
+print(metrics_knn_time) #start 169, 0.882
+
+#CV
+cv_folds <- vfold_cv(time_train_data, v = 10)
+knn_time_tune <- nearest_neighbor(neighbors = tune(), weight_func = tune(), dist_power = tune()) %>% set_engine("kknn") %>% set_mode("regression")
+knn_time_tune_wf <- workflow() %>% add_recipe(outbreak_time_recipe) %>% add_model(knn_time_tune)
+knn_time_grid <- grid_regular(neighbors(range = c(5, 50)), weight_func(values = c("rectangular", "triangular", "gaussian")), dist_power(range = c(1, 2)), levels = 3)
+knn_time_cv <- tune_grid(knn_time_tune_wf, resamples = cv_folds, grid = knn_time_grid, metrics = metric_set(yardstick::rmse, rsq))
+collect_metrics(knn_time_cv) #now 256-321, 0.321-587
+
+#Pick best CV for predictions
+best_knn_time_cv <- select_best(knn_time_cv, metric = "rmse")
+final_knn_time <- finalize_workflow(knn_time_workflow, best_knn_time_cv)
+knn_time_best <- fit(final_knn_time, data = time_train_data)
+train_predict_knn_time <- predict(knn_time_best, new_data = time_train_data) %>% bind_cols(time_train_data %>% select(predicted_next)) %>% mutate(dataset = "Train")
+metrics_train_knn_time <- train_predict_knn_time %>% metrics(truth = predicted_next, estimate = .pred)
+print(metrics_train_knn_time) #new 169, 0.882
+
+#Evaluate with test data 
+test_predict_knn_time <- predict(knn_time_best, new_data = time_test_data) %>% bind_cols(time_test_data) %>% mutate(dataset = "Test")
+metrics_test_knn_time <- test_predict_knn_time %>% metrics(truth = predicted_next, estimate = .pred)
+print(metrics_test_knn_time) #oof 384, 0.0968
+
+combined_predict_knn_time <- bind_rows(train_predict_knn_time, test_predict_knn_time)
+ggplot(combined_predict_knn_time, aes(x = predicted_next, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "Predicted vs Observed: Training and Test Data") #yeah, definitely worse than the random forest
+
+###Model 3 for this question - XGBoost
+xgb_time_spec <- boost_tree() %>% set_engine("xgboost", seed = rngseed) %>% set_mode("regression")
+xgb_time_workflow <- workflow() %>% add_recipe(outbreak_time_recipe) %>% add_model(xgb_time_spec)
+xgb_time_fit <- xgb_time_workflow %>% fit(data = time_train_data)
+predict_xgb_time <- predict(xgb_time_fit, new_data = time_train_data) %>% bind_cols(time_train_data %>% select(predicted_next))
+metrics_xgb_time <- predict_xgb_time %>% metrics(truth = predicted_next, estimate = .pred) 
+print(metrics_xgb_time) #only 10.3, 1.000 niiiice what 
+
+#CV
+cv_folds <- vfold_cv(time_train_data, v = 10)
+xgb_time_tune <- boost_tree(trees = tune(), tree_depth = tune(), min_n = tune(), loss_reduction = tune(), learn_rate = tune()) %>% set_engine("xgboost", seed = rngseed) %>% set_mode("regression")
+xgb_time_tune_wf <- workflow() %>% add_recipe(outbreak_time_recipe) %>% add_model(xgb_time_tune)
+xgb_time_grid <- grid_space_filling(trees(range = c(100, 1000)), tree_depth(range = c(3, 10)), min_n(range = c(2, 20)), loss_reduction(range = c(-5, 2)), learn_rate(range = c(-3, -0.5)), size = 20)
+xgb_time_cv <- tune_grid(xgb_time_tune_wf, resamples = cv_folds, grid = xgb_time_grid, metrics = metric_set(yardstick::rmse, rsq))
+collect_metrics(xgb_time_cv) #57.7-298, 0.9xxx
+
+#Pick best CV for predictions
+best_xgb_time_cv <- select_best(xgb_time_cv, metric = "rmse")
+final_xgb_time <- finalize_workflow(xgb_time_workflow, best_xgb_time_cv)
+xgb_time_best <- fit(final_xgb_time, data = time_train_data)
+train_predict_xgb_time <- predict(xgb_time_best, new_data = time_train_data) %>% bind_cols(time_train_data %>% select(predicted_next)) %>% mutate(dataset = "Train")
+metrics_train_xgb_time <- train_predict_xgb_time %>% metrics(truth = predicted_next, estimate = .pred)
+print(metrics_train_xgb_time) #yay still 10.3, 1.000
+
+#Evaluate with test data 
+test_predict_xgb_time <- predict(xgb_time_best, new_data = time_test_data) %>% bind_cols(time_test_data) %>% mutate(dataset = "Test")
+metrics_test_xgb_time <- test_predict_xgb_time %>% metrics(truth = predicted_next, estimate = .pred)
+print(metrics_test_xgb_time) #still very good 55.0, 0.985
+
+combined_predict_xgb_time <- bind_rows(train_predict_xgb_time, test_predict_xgb_time)
+ggplot(combined_predict_xgb_time, aes(x = predicted_next, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "Predicted vs Observed: Training and Test Data") #gorgeous, best one 
+
+```
+
+
+Second question - WHICH SPECIES will the next outbreak be
+
+```{r}
+##Model 1 - 
+
+
+
+##Model 2 - 
+
+
+
+##Model 3 - 
+
+
+
+```
+
+Third question - WHETHER it will have AMR
+
+```{r}
+##Model 1 - 
+
+
+
+##Model 2 - 
+
+
+
+##Model 3 - 
+
+
+
+```
+
+MAYBE do a fourth question - predict WHERE the next outbreak will be
