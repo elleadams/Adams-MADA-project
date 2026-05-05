@@ -650,7 +650,7 @@ plot12 <- ggplot(combined_predict_arima_anti, aes(x = `Number Anti`, y = .pred, 
 
 figure_file = here("results", "figures", "outbreaksovertimebasic1.png")
 ggsave(filename = figure_file, plot = plot12) 
-
+ 
 plot11 <- ggplot(test_predict_arima_anti, aes(x = date, y = `Number Anti`)) +
   geom_point() + 
   geom_smooth(method = "lm", se = FALSE, color = "blue") +
@@ -658,7 +658,7 @@ plot11 <- ggplot(test_predict_arima_anti, aes(x = date, y = `Number Anti`)) +
   labs(x = "Number of Outbreak Isolates with AMR", y = "Date", title = "Increasing Trend of AMR Over Time")
 
 figure_file = here("results", "figures", "amr-time-trend-line.png")
-ggsave(filename = figure_file, plot = plot10) 
+ggsave(filename = figure_file, plot = plot11) 
 
 ##Model 2 - Exponential Smoothing
 #CV
