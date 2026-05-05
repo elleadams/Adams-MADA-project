@@ -79,7 +79,9 @@ df_naming <- mydata %>% group_by(genus_species) %>% summarise(total_outbreak_iso
 plot3 <- ggplot(df_naming, aes(x = genus_species, y = total_outbreak_isolates)) +
   geom_col() +
   coord_flip() + 
-  labs(x = "Number of Outbreak Isolates", y = "Pathogen", title = "Number of Outbreak Isolates per Pathogen")
+  labs(x = "Pathogen", y = "Number of Outbreak Isolates", title = "Number of Outbreak Isolates per Pathogen") +
+  theme(axis.text.x = element_text(size = 5)) +
+  theme(axis.text.y = element_text(size = 2.5))
 
 ##Saving 
 figure_file = here("results", "figures", "naming-number-isolates.png")
