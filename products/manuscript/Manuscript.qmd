@@ -1,15 +1,12 @@
 ---
-title: "Data Analysis Project - What are the trends in anti-microbial resistance among outbreak isolates over time, geography, and pathogen?"
+title: "Using Publicly Available Data to Predict Outbreak Trends"
 author: "Elle Adams"
 format:
   docx:
     toc: false
     number-sections: true
     highlight-style: github
-bibliography: ../../assets/dataanalysis-references.bib
-csl: ../../assets/american-journal-of-epidemiology.csl
 ---
-This uses [MS Word as output format](https://quarto.org/docs/output-formats/ms-word.html). 
 
 ```{r, echo=FALSE, message=FALSE}
 # load a few R packages
@@ -19,7 +16,7 @@ library(knitr)
 
 **Authors**  
 
-* Elle Adams$^{1}$ (ORCID: 0000-0000-1234-5678) 
+* Elle Adams$^{1}$
 
 **Author affiliations**  
 
@@ -30,113 +27,107 @@ $\land$ Corresponding author: ea32206@uga.edu
 $\dagger$ Disclaimer: The opinions expressed in this article are the
 author's own and don't reflect their employer.
 
-{{< pagebreak >}}
-
 # Abstract
-_Write a summary of your project._
-
-{{< pagebreak >}}
+The detection and prevention of infectious disease outbreaks is a core component of public health work, and publicly available data is a useful tool in the identification of patterns in outbreak data to be used for the future. This study used publicly available BEAM Dashboard data to demonstrate the utility of this data by determining patterns in outbreaks over time and predicting key features of future outbreaks. 
 
 # Introduction 
-
-## General Background Information
-_Provide enough background on your topic that others can understand the why and how of your analysis_ 
-
-## Description of data and data source
-The datasets utilized in this project are from the  BEAM (Bacteria, Enterics, Ameba, and Mycotics) Dashboard, which include data from the System for Enteric Disease Response, Investigation, and Coordination (SEDRIC), National Antimicrobial Resistance Monitoring System for Enteric Bacteria (NARMS) and National Outbreak Reporting System (NORS). The datasets contain information about pathogens, serotypes, antimicrobial resistance, HHS region, burden, and trajectory. I will likely combine a couple datasets on the BEAM dashboard to answer my questions. 
-
-## Questions/Hypotheses to be addressed
-
-The question I am interested in asking for this project concerns investigating trends in anti-microbial resistance among outbreak isolates over time, geography, and pathogen. This question interests me primarily because I am interested in understanding the "rules" or lack thereof for outbreaks, particularly bacterial outbreaks. 
-
-Before really looking at any of the data, I would hypothesize that outbreak strains would have very similar anti-microbial resistance mutations, and I would imagine that they would be geographically separated into serotypes. 
-
-{{< pagebreak >}}
+One of the many arms of the public health infrastructure is detecting and controlling infectious disease outbreaks, particularly foodborne, waterborne, and enteric diseases. Crucial to controlling outbreaks is source and risk variable identification. Common obstacles to this process is fragmentation of information, poor communication, and lack of trace-back data. As part of the effort to solve these issues, the CDC has ceated the  BEAM (Bacteria, Enterics, Ameba, and Mycotics) Dashboard, which includes data from the System for Enteric Disease Response, Investigation, and Coordination (SEDRIC), National Antimicrobial Resistance Monitoring System for Enteric Bacteria (NARMS) and National Outbreak Reporting System (NORS). BEAM is a public tool to interact with and visualize data about pathogens, serotypes, antimicrobial resistance, HHS region, and burden of outbreak samples. This study sought to use this publicly available data to determine whether the shared information was sufficient to get a reasonable picture of the current state of these outbreaks, including the antimicrobial resistance and specific pathogen burdens over space and time, and also make reliable predictions about future outbreaks, specifically: 
+ - Can this data be used to predict when the next outbrek will occur? 
+ - Can it be used to predict which species the next outbreak will be?
+ - Can it be used to predict whether the next outbreak will have antimicrobial resistance?
+ - Can it be used to predict where the next outbreak will be? 
 
 # Methods 
 
-Part 1 - At this stage, I imagine for the analysis statistical analyses, linear regressions, plots over time, plots over different regions, plots separating isolates by classification and frequency, investigation of the types of antimicrobial resistance, etc. Pretty vague right now. 
-
-## Schematic of workflow
-
-Sometimes you might want to show a schematic diagram/figure that was not created with code (if you can do it with code, do it). @fig-schematic is an example of some - completely random/unrelated - schematic that was generated with BioRender.
-We store those figures in the `assets` folder.
-
-```{r}
-#| label: fig-schematic
-#| fig-cap: "A figure that is manually generated and shows some overview/schematic. This has nothing to do with the data, it's just a random one from one of our projects I found and placed here."
-#| echo: FALSE
-knitr::include_graphics(here("assets","antigen-recognition.png"))
-```
-
-## Data acquisition
-_As applicable, explain where and how you got the data. If you directly import the data from an online source, you can combine this section with the next._
-
 ## Data import and cleaning
-_Write code that reads in the file and cleans it so it's ready for analysis. Since this will be fairly long code for most datasets, it might be a good idea to have it in one or several R scripts. If that is the case, explain here briefly what kind of cleaning/processing you do, and provide more details and well documented code somewhere (e.g. as supplement in a paper). All materials, including files that contain code, should be commented well so everyone can follow along._
+The data utilized in this study was imported directly from the BEAM dashboard Report Data. Many of the entries were incomplete, and so to maximize the data that I identified as having an impact on the questions of interest, 7 rows with missing State column datan and rows that did not have any information in the Outbreak Associated Isolates column were removed. Further, columns that I did not intend to use in my analysis were also removed, including Source Type, Source Site, New multistate outbreaks, New multistate outbreaks - US, and Number of Sequenced Isolates Analyzed by NARMS were also removed. Columns Year and Month were used to make a column called Date and were then also removed. A column called Number of Outbreak Isolates with Atimicrobial Resistance was created using columns Outbreak Associated Isolates and % Isolates with Clinically Important Antimicrobial Resistance, after which % Isolates with Clinically Important Antimicrobial Resistance was removed. A binary column, called is_outbreak, describing whether the information in the column described an outbreak or not, was also created using the column Outbreak Associated Isolates. Finally, columns Pathogen and Serotype/Species were used to create another column combining them called genus_species, after which the originals were removed. The remaining columns used for the analysis were State, Number of Isolates, Number of Outbreak Isolates with Atimicrobial Resistance, date, genus_species, and is_outbreak. Additional columns were added when addressing each question in order to best prepare. 
 
 ## Statistical analysis
-_Explain anything related to your statistical analyses._
-
-{{< pagebreak >}}
+Each of the investigated questions were evaluated using R (version 4.5.1) and the tidymodels package. They were assessed via fitting to three different models each, under 10-fold cross-validation on training data, and then presented with new, testing data for final assessment. The final model for each was selected using root mean square (RMSE) for the regression questions involved when the next outbreak will be and what the current state of antimicrobial resistance, and the classification questions were assessed using accuracy. Seasonality of the data was assessed via Poisson model and Type I (sequential) ANOVA with Chi-squred Likelihood Ratio. The forecast of future antimicrobial resistance was done via Autoregressive Integrated Moving Average (ARIMA), predicted with 80% and 95% confidence intervals. The code and data to reproduce the results are available at: xxx. 
 
 # Results
 
-## Exploratory/Descriptive analysis
-
-_Use a combination of text/tables/figures to explore and describe your data. Show the most important descriptive results here. Additional ones should go in the supplement. Even more can be in the R and Quarto files that are part of your project._
-
-@tbl-summarytable shows a summary of the data.
-
-Note the loading of the data providing a **relative** path using the `../../` notation. (Two dots means a folder up). You never want to specify an **absolute** path like `C:\ahandel\myproject\results\` because if you share this with someone, it won't work for them since they don't have that path. You can also use the `here` R package to create paths. See examples of that below. I generally recommend the `here` package.
+## Current State of BEAM Outbreaks
+The most common use of the data in the BEAM database is to understand the most up to date information regarding the outbreak burden that public health is facing. For the first part of this study, I used the imported data to do just that. 
+The highest number of outbreak associated isolates per state from 2018 to 2025 was in California (839, 864, 716, 627, 706, 680, 1008, and 746 isolates, respectively). The limited 2026 data included so far has Illinois with the most at 4 isolates thus far (Figure 1). 
 
 ```{r}
-#| label: tbl-summarytable
-#| tbl-cap: "Data summary table."
+#| label: Figure 1
+#| fig-cap: "Outbreak Associated Isolates per State"
 #| echo: FALSE
-resulttable <- readRDS("../../results/tables/summarytable.rds")
-knitr::kable(resulttable)
+knitr::include_graphics(here("results", "figures", "faceted-states-isolates.png"))
 ```
 
-## Basic statistical analysis
-
-_To get some further insight into your data, if reasonable you could compute simple statistics (e.g. simple models with 1 predictor) to look for associations between your outcome(s) and each individual predictor variable. Though note that unless you pre-specified the outcome and main exposure, any "p<0.05 means statistical significance" interpretation is not valid._
-
-@fig-result shows a scatterplot figure produced by one of the R scripts.
+The total number of outbreak isolates sampled demonstrates clear seasonality (p-value 2.2e-16), consistently over the provided timeframe (Figure 2), with the peak number of outbreak isolates on average occuring in July, with the fewest occuring in January (Figure 3). 
 
 ```{r}
-#| label: fig-result
-#| fig-cap: "Height and weight stratified by gender."
+#| label: Figure 2
+#| fig-cap: "Outbreak Associated Isolates Over Time"
 #| echo: FALSE
-knitr::include_graphics(here("results","figures","height-weight-stratified.png"))
+knitr::include_graphics(here("results", "figures", "outbreaks-over-time.png"))
 ```
-
-## Full analysis
-
-_Use one or several suitable statistical/machine learning methods to analyze your data and to produce meaningful figures, tables, etc. This might again be code that is best placed in one or several separate R scripts that need to be well documented. You want the code to produce figures and data ready for display as tables, and save those. Then you load them here._
-
-Example @tbl-resulttable2 shows a summary of a linear model fit.
 
 ```{r}
-#| label: tbl-resulttable2
-#| tbl-cap: "Linear model fit table."
+#| label: Figure 3
+#| fig-cap: "Average Outbreaks by Month"
 #| echo: FALSE
-resulttable2 <- readRDS(here("results","tables","resulttable2.rds"))
-knitr::kable(resulttable2)
+knitr::include_graphics(here("results", "figures", "outbreaks-per-month.png"))
 ```
 
-{{< pagebreak >}}
+Of the top 5 outbreak species, the ones with the highest number of isolates were Salmonella enteritidis, Shigella sonnei, Salmonella newport, Salmonella typhimurium, and Shiga-toxin producing Escherichia coli (STEC) O157:H7 (7370, 5061, 3640, 3128, and 2438 isolates respectively) (Figure S1). These genera also dominate the rest of the top 15 pathogens with outbreak isolates. There was not sufficient data from each species to investigate whether antimicrobial resistance trends for each pathogen were increasing or decreasing. The number of outbreak isolates with clinically significant antimicrobial resistance (AMR) was low; the pathogens with the highest percentage of outbreak isolates with AMR, at 2%, were Salmonella hadar, Salmonella enteritidis, and Salmonella tyhphimurium, all in 2025 (Figure S2). The overall number of isolates in the database with AMR over time appears to be have peaked around 2024, but with more modest, intermittent spikes to the present day. Using this data, the forecast for future AMR isolates indicates another slight increase going forward, with 80% confidence interval from -26.11 to 58.37 (Figure 3). 
+
+A full model fitting analysis was performed to assess whether overall outbreak numbers are increasing or decreasing over time. Using total number of outbreak isolates as the outcome and just date as the predictor, the best fit model was a Linear Regression Model(RMSE 161, R-squared 0.615), a moderate fit. Other models included Poisson (RMSE 168, R-Squared 0.570) and Random Forest (RMSE 177, R-Squared 0.555). (Figure S3). This model indicated the trend to be a very slight decrease in overall number of outbreak associated isolates (Figure 4).
+
+```{r}
+#| label: Figure 4
+#| fig-cap: "Decreasing Trend of Outbreaks Over Time"
+#| echo: FALSE
+knitr::include_graphics(here("results", "figures", "outbreak-time-trend-line.png"))
+```
+
+To then determine the trend for resistance, the best fit model was an ARIMA model, with the outcome of interest being number of isolates with AMR and the only predictor being time (RMSE 26.1, R-squared 0.115), a poor fit. Other models included Exponential Smoothing (RMSE 28.1) and Prophet (RMSE 43, R-Squared 0.0252) (Figure S4). This model indicated an upward trend in the number of isolates with AMR (Figure 5). 
+
+```{r}
+#| label: Figure 5
+#| fig-cap: "Increasing Trend of AMR Over Time"
+#| echo: FALSE
+knitr::include_graphics(here("results", "figures", "amr-time-trend-line.png"))
+```
+
+## Predicting Outbreak Beginning
+To answer this question, additional columns days_since_last, avg_days_between, sd_days_between, last_outbreak, n_outbreaks, predicted_next, lower_bound, and upper_bound were added to the cleaned dataframe. The best fitting model of the outcome predicted_next given avg_days_between, sd_days_between, last_outbreak, n_outbreaks, State, and genus_species as predictors was an Extreme Gradient Boosting (XGBoost) model (RMSE 34.8, R-Squared 0.999) Other models included a Random Forest Model (RMSE 155, R-Squared 0.980) and a K-Nearest Neighbors (KNN)Model (RMSE 605, R-Squared 0.546) (Figure S5). 
+
+## Predicting Outbreak Species
+For the question of if this data is sufficient to predict the next outbreak species, the best fitting model was a Random Forest Model (Accuracy 0.140). In this case, the dataframe from the previous question on when the next outbreak will occur was used to add a column called outbreak_frequency and to predict genus_species with the predictors avg_days_between, sd_days_between, days_since_last, n_outbreaks, outbreak_frequency, and State. Other models included a Support Vector Machine (SVM) Model (Accuracy 0.0247) and a Multinomial Regression (Accuracy 0.0192) (Figure S6). 
+
+## Predicting Outbreak Antimicrobial Resistance
+To predict whether the next outbreak will have AMR, the cleaned dataframe was edited to include a binary column called has_resistance and another called resistance_proportion. With has_resistance as the outcome of interest and resistance_proportion, State, and genus_species as the predictors, the best fitting model was tied between XGBoost (Accuracy 1) and Random Forest (Accuracy 1) The other model tried for this question was a Logistic Regression (Accuracy 0.892) (Figure S7). 
+
+## Predicting Outbreak Location
+As for predicting the outbreak location, no columns were added from the previous question predicting AMR. The outcome was State and the predictors weregenus_species, n_outbreaks, and outbreak_frequency. The best fitting model in this case was again a Random Forest Model (Accuracy 0.0127). The two others were a Multinomial Regression (Accuracy 0.00127) and an SVM (Accuracy 00381) (Figure S8). 
 
 # Discussion
 
 ## Summary and Interpretation
-_Summarize what you did, what you found and what it means._
+In this analysis, I examined the current trends of foodborne, waterborne, and enteric illnesses using publicly available data from the BEAM Database and explored how this data could be used to predict future outbreaks. Overall, my work indicates a number of things. 
+
+First, analysis suggests that outbreaks of this nature are seasonal, with more outbreaks during warmer months and fewer during colder months. The Linear Regression Model used to determine an overall trend in this data did indicate a a slight decline of overall number of outbreak associated isolates. This could indicate a number of things, like a true decrease in outbreaks stemming from improved public health measure preventing them, or a simple gap in the data. Additionally, this model was best fit with an RMSE of 161 and R-squared of 0.615. This is only a moderate fit, indicating that while the date or time of year has an influence on when outbreak isolates emerge, more than just calendar data is needed to paint a more accurate picture of outbreak trends. This conclusion is not surprising as pathogens are not simply beholden to time alone and other factors, like surveillance funding and food and wastre laws, will certainly influence the number of outbreaks. I am not surprised to see thi seasonal trend as warmer periods of time do provide a better environment for the replication of the source pathogens. I am somewhat surprised to see a general decline in the number of outbreaks overall, given the current lack of funding to public health entities and lack of trust in public health officials, I would have predicted a slight increase in outbreak isolates over time. 
+
+Secondly, an analysis of the antimicorbial resistant element of the outbreak isolates revealed that the percentage of isolates with resistance is actually quite low. The best fit ARIMA model did predict an increase in resistance for future isolates; however, the confidence interval for this prediction was quite large and included negative isolate counts, indicating that it is not very confident in this prediction. Furthermore, this best fitting model was a poor fit, with RMSE 26.1 and R-squared 0.115, again indicating that time is not a driving factor behind the development of antimicrobial resistance. This is ultimately what I expected from this model. The mechanisms behind the development of antimicrobial resistance are still being discovered, and I did not expect time to be a key factor. I am also not surprised that this model predicted an increase in antimicrobial resistance in future outbreak isolates, albeit with little confidence, as antibitoic resistance in general is on the rise globally. 
+
+Thirdly, I intended to see if it would be possible to predict a number of things about future outbreaks. I firstly investigated the timings of the outbreaks. I was able to design an XGBoost Model (RMSE 34.8, R-Squared 0.999) that could accurately predict when new outbreaks would emerge when given the data on previous outbreak behavior gathered from the BEAM Dashboard. Again,  I am not surprised that this is the outcome of this analysis as it is related to the overall trend of outbreak isolates over time, and including more information about the isolates we have been able to study meant being able to more accurately predict future outbreaks. 
+
+Next, I wanted to see if I would be able to use the BEAM data to predict the pathogens responsible for future outbreaks. Unfortunately, the best fit Random Forest Model for this analysis only had an accuracy of 0.140, meaning it was failing to predict the pathogen. While I was a bit shocked at first that the location and time data was not enough to predict the pathogen, I do now understand. This model is not complex enough to capture and explain the complicated interplay between pathogens, people, and their environments, including the influence lower- and upper-level governing bodies, regional weather patterns, and population density. 
+
+After this, I asked about predicting antimicrobial resistance. To my surprise, two of the models I fit, XGBoost and Random Forest, both demonstrated an accuracy of 1. This could be an excellent win for the utility of the BEAM Dashboard to researchers at various institutions working to understand antimicrobial resistance patterns. However, given the limitations of the data, being that the specific AMR mutations were not listed and that it seems there was no isolate in the dataset that displayed antimicrobial resistance at more than one time period, I am concerned about an overfitting problem in this instance. There is likely key data that is missing from the dataset. 
+
+Finally, I endeavoured to see if I would be able to predict the future outbreak locations. The best fit Random Forest Model only had an accuracy of 0.0127, indicating that despite the cross-validation and training, the model is unable to predicate a location for a future outbreak given the background information it was given. This is not entirely unexpected, again I think there are variables that could be missing that would make this a stronger model, but I don't know if it would ever be possible to reliably predict where the next outbreak will be.  
 
 ## Strengths and Limitations
-_Discuss what you perceive as strengths and limitations of your analysis._
+This analysis was performed using limited publicly available data, and so a limitation of the study itself is that there are a number of other varaiables that influence disease outbreaks that are not represented in this dataset, so attempts to model and fit this data may not accurately represent real world scenarios. However, I think the number of different analyses performed to try to make sense of the data is a strength of the study. 
 
 ## Conclusions
-_What are the main take-home messages?_
+The above study further supports the current understanding of foodborne, waterborne, and enteric disease outbreaks. Outbreaks follow a seasonal pattern and antimicrobial resistance is slightly rising; however, there is still much about where, when, why, and what outbreak will occur that makes prediction difficult. Public health offices face many obstacles in their work on outbreak surveillance, detection, and prevention, but publicly available data is a step in the right direction of making this analysis more accessible. Further improvements in this area may be possible with the addition of other metadata in these public databases. 
 
 _Include citations in your Qmd file using BibTeX, the list of references will automatically be placed at the end_ 
 

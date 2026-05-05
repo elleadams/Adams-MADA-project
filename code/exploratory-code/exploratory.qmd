@@ -14,6 +14,7 @@ library(dplyr)
 library(tidyverse) 
 library(skimr) 
 library(here)
+library(forecast)
 ```
 
 Load the data.
@@ -27,34 +28,27 @@ mydata <- readRDS(data_location)
 
 So for now in this qmd we are calling the preliminarily processed dataframe with 2118 rows and 13 columns. 
 
-# Data exploration through tables
-
-Showing a bit of code to produce and save a summary table.
-
-```{r}
-summary_df = skimr::skim(mydata)
-print(summary_df)
-# save to file
-summarytable_file = here("results", "tables", "summarytable.rds")
-saveRDS(summary_df, file = summarytable_file)
-```
-
 # Data exploration through figures
 
 So I think first I just want to see plots, one for each year, with number of outbreak isolates per state, just to get a baseline. 
 
 ```{r}
 ##Grouping first 
-year_state_subset <- mydata %>% group_by(Year, State) %>%
-    summarise(isolate_count = n(), .groups = 'drop')
+year_state_subset <- mydata %>% group_by(Year = year(date), State) %>% summarise(isolate_count = sum(`Outbreak associated isolates`, na.rm = TRUE), .groups = "drop")
 ##Making faceted bar plots
 plot1 <- ggplot(year_state_subset, aes(x = State, y = isolate_count)) +
   geom_bar(stat = "identity", fill = "steelblue") +
   facet_wrap(~Year) + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 1, size = 4))
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 1, size = 4)) + 
+  labs(x = "State", y = "Number of Outbreak Associated Isolates", title = "Outbreak Associated Isolates per State")
+
 ##Saving
 figure_file = here("results", "figures", "faceted-states-isolates.png")
 ggsave(filename = figure_file, plot = plot1) 
+
+top_states <- year_state_subset %>% group_by(Year) %>% slice_max(order_by = isolate_count, n = 1, with_ties = FALSE) %>% select(State, isolate_count, Year)
+print(top_states)
+
 ```
 
 Then I want to see total number of outbreak isolates over time. 
@@ -62,7 +56,6 @@ Then I want to see total number of outbreak isolates over time.
 ```{r}
 ##To see the continuous plot over time that I want to see, I need to make a proper date column
 df_monthly <- mydata %>%
-  mutate(date = make_date(Year, Month, 1)) %>%
   group_by(date) %>%
   summarise(total_isolates = sum(`Outbreak associated isolates`)) 
 ###Now making the plot
@@ -70,7 +63,8 @@ plot2 <- ggplot(df_monthly, aes(x = date, y = total_isolates)) +
   geom_line(color = "blue", linewidth = 1) +
   geom_point() +
   scale_x_date(date_labels = "%b %Y", date_breaks = "3 months")+ 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  labs(x = "Date", y = "Number of Outbreak Associated Isolates", title = "Outbreak Associated Isolates Over Time") 
 ##Saving
 figure_file = here("results", "figures", "outbreaks-over-time.png")
 ggsave(filename = figure_file, plot = plot2) 
@@ -80,57 +74,99 @@ I also want to see a genus/species breakdown of number of isolates, to see which
 
 ```{r}
 ##To see the unique genus and species (Pathogen and Serotype/Species) combos, I need to make a new column first
-df_naming <- mydata %>%
-  mutate(genus_species = paste(Pathogen, `Serotype/Species`, sep = " ")) %>%
-  count(genus_species)
+df_naming <- mydata %>% group_by(genus_species) %>% summarise(total_outbreak_isolates = sum(`Outbreak associated isolates`, na.rm = TRUE)) %>% filter(total_outbreak_isolates > 0)
 ###Now making plot
-plot3 <- ggplot(df_naming, aes(x = genus_species, y = n)) +
+plot3 <- ggplot(df_naming, aes(x = genus_species, y = total_outbreak_isolates)) +
   geom_col() +
-  coord_flip()
+  coord_flip() + 
+  labs(x = "Number of Outbreak Isolates", y = "Pathogen", title = "Number of Outbreak Isolates per Pathogen")
+
 ##Saving 
 figure_file = here("results", "figures", "naming-number-isolates.png")
 ggsave(filename = figure_file, plot = plot3) 
+
+top_species <- df_naming %>% slice_max(order_by = total_outbreak_isolates, n = 20, with_ties = FALSE) %>% select(genus_species, total_outbreak_isolates)
+print(top_species)
+
 ```
 
 Also interested to see if source site or source type are in anyway correlated to number of outbreak isolates. 
 
 ```{r}
+####I did these plots initially, before I did my last round of cleaning up my data frame, so these columns aren't included in the most recent version anymore.
 ###Straightforward plots this time 
-plot4 <- ggplot(mydata, aes(x = `Source Site`, y = `Outbreak associated isolates`)) + 
-    geom_col()
+#plot4 <- ggplot(mydata, aes(x = `Source Site`, y = `Outbreak associated isolates`)) + 
+    #geom_col()
 
-plot5 <- ggplot(mydata, aes(x = `Source Type`, y = `Outbreak associated isolates`)) + 
-    geom_col()
+#plot5 <- ggplot(mydata, aes(x = `Source Type`, y = `Outbreak associated isolates`)) + 
+    #geom_col()
 #Saving
-figure_file = here("results", "figures", "site-outbreaks.png")
-ggsave(filename = figure_file, plot = plot4) 
+#figure_file = here("results", "figures", "site-outbreaks.png")
+#ggsave(filename = figure_file, plot = plot4) 
 
-figure_file = here("results", "figures", "type-outbreaks.png")
-ggsave(filename = figure_file, plot = plot5) 
+#figure_file = here("results", "figures", "type-outbreaks.png")
+#ggsave(filename = figure_file, plot = plot5) 
 ```
 
 
 ```{r}
 ###Need to investigate is antimicrobial resistance increasing over time, and which species are associated - this can also be looked at with just ggplot I think 
-df_anti_per_iso_time <- mydata %>% mutate(`Proportion of Outbreaks Isolates with Antimicroobial Resistance` = `Number of Outbreak Isolates with antimicrobial resistance`/`Outbreak associated isolates`) %>% 
-  mutate(genus_species = paste(Pathogen, `Serotype/Species`, sep = " ")) %>% 
-  mutate(date = make_date(Year, Month, 1)) %>%
-  group_by(date)
-  
-plot6 <- ggplot(df_anti_per_iso_time, aes(x = Year, y = `Proportion of Outbreaks Isolates with Antimicroobial Resistance`)) +
-  geom_bar(stat = "identity", fill = "steelblue") + 
-  facet_wrap(~genus_species) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+df_anti_per_iso_time <- mydata %>% distinct(genus_species, .keep_all = TRUE) %>% arrange(Year = year(date)) %>% mutate(`Percent Outbreak Isolates with AMR` = (`Number of Outbreak Isolates with antimicrobial resistance` / `Outbreak associated isolates`) * 100)
 
-figure_file = here("results", "figures", "faceted_resistance_time_species.png")
+df_anti_per_iso_time <- df_anti_per_iso_time %>% drop_na(`Percent Outbreak Isolates with AMR`)
+  
+plot6 <- ggplot(df_anti_per_iso_time, aes(x = date, y = `Percent Outbreak Isolates with AMR`, color = genus_species, group = genus_species)) +
+  geom_line(size = 1) + 
+  geom_point() +
+  labs(title = "Antimicrobial Resistance Over Time", x = "Date", y = "Percent of Outbreak Isolates with Antimicrobial Resistance", color = "Species") + scale_color_discrete(na.translate = FALSE) + ylim(0, 2)
+
+figure_file = here("results", "figures", "resistance_time_species.png")
 ggsave(filename = figure_file, plot = plot6) 
 
-df_anti_time <- mydata %>% group_by(Year) %>% mutate(Number_Anti = sum(`Number of Outbreak Isolates with antimicrobial resistance`))
+result <- df_anti_per_iso_time %>% slice_max(order_by = `Percent Outbreak Isolates with AMR`, n = 5, with_ties = FALSE) %>% select(genus_species, `Percent Outbreak Isolates with AMR`, date)
+print(result)
 
-plot7 <- ggplot(df_anti_time, aes(x = Year, y = `Number_Anti`)) +
+df_anti_time <- mydata %>% group_by(date) %>% summarise(`Number Anti` = sum(`Number of Outbreak Isolates with antimicrobial resistance`, na.rm = TRUE)) %>%
+  ungroup()
+
+plot7 <- ggplot(df_anti_time, aes(x = date, y = `Number Anti`)) +
   geom_line(color = "blue", linewidth = 1) +
   geom_point()
 
 figure_file = here("results", "figures", "resistnce_over_time.png")
 ggsave(filename = figure_file, plot = plot7) 
+
+current_state <- df_anti_time %>%
+  summarise(
+    current_value = last(`Number Anti`),
+    overall_mean = mean(`Number Anti`),
+    recent_mean = mean(tail(`Number Anti`, 6)),
+    trend_slope = coef(lm(`Number Anti` ~ as.numeric(date)))[2],
+    percent_change_from_start = (last(`Number Anti`) - first(`Number Anti`)) / first(`Number Anti`) * 100,
+    is_increasing = last(`Number Anti`) > mean(`Number Anti`))
+
+print(current_state)
+
+forecast_model <- auto.arima(df_anti_time$`Number Anti`)
+future_forecast <- forecast(forecast_model, h = 6)
+last_date <- max(df_anti_time$date)
+forecast_dates <- seq(last_date, by = "month", length.out = 7)[-1]
+
+forecast_df <- data.frame(date = forecast_dates, forecast = as.numeric(future_forecast$mean), lower_80 = as.numeric(future_forecast$lower[,1]), upper_80 = as.numeric(future_forecast$upper[,1]), lower_95 = as.numeric(future_forecast$lower[,2]), upper_95 = as.numeric(future_forecast$upper[,2]))
+
+# Plot with actual dates
+plot8 <- ggplot() +
+  geom_line(data = df_anti_time, aes(x = date, y = `Number Anti`), color = "black", linewidth = 1) +
+  geom_point(data = df_anti_time, aes(x = date, y = `Number Anti`)) +
+  geom_line(data = forecast_df, aes(x = date, y = forecast), color = "blue", linewidth = 1, linetype = "dashed") +
+  geom_ribbon(data = forecast_df, aes(x = date, ymin = lower_95, ymax = upper_95), fill = "blue", alpha = 0.2) +
+  geom_ribbon(data = forecast_df, aes(x = date, ymin = lower_80, ymax = upper_80), fill = "blue", alpha = 0.3) +
+  theme_minimal() +
+  labs(title = "Antimicrobial Resistance: Historical & Forecast", x = "Date", y = "Number of Resistant Isolates", caption = "Shaded areas represent 80% and 95% confidence intervals")
+
+figure_file = here("results", "figures", "historical_forecast-resistance.png")
+ggsave(filename = figure_file, plot = plot8) 
+
+
+
 ```

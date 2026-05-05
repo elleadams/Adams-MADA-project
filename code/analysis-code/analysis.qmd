@@ -31,7 +31,11 @@ library(zoo)
 library(kknn)
 library(timetk)
 library(LiblineaR)
-
+library(modeltime)
+library(timetk)
+library(poissonreg)
+library(ggpubr)
+library(patchwork)
 ```
 
 Load the data.
@@ -40,7 +44,7 @@ Load the data.
 #Path to data. Note the use of the here() package and not absolute paths
 data_location <- here::here("data","processed-data","processeddata.rds")
 #load data
-mydata <- readRDS(data_location)
+mydata_clean <- readRDS(data_location)
 ```
 
 
@@ -48,12 +52,6 @@ mydata <- readRDS(data_location)
 ###Can we predict when the next outbreak will occur, which species it will be, and whether it will have antimicrobial resistance - three different models?
 
 rngseed <- 1234
-
-#Need to make a better data frame? 
-mydata_clean <- mydata %>% mutate(date = make_date(Year, Month, 1)) %>% 
-    mutate(genus_species = paste(Pathogen, `Serotype/Species`, sep = " ")) %>% 
-    select(-c(Year, Month, `Source Type`, `Source Site`, Pathogen, `Serotype/Species`, `New multistate outbreaks`, `New multistate outbreaks - US`, `% Isolates with clinically important antimicrobial resistance`)) %>%
-    mutate(is_outbreak = ifelse(`Outbreak associated isolates` > 0, 1, 0))
 
 ```
 
@@ -75,7 +73,7 @@ time_test_data  <- testing(data_split)
 outbreak_time_recipe <- recipe(predicted_next ~ avg_days_between + sd_days_between + last_outbreak + n_outbreaks + State + genus_species, data = time_train_data) %>% step_novel(all_nominal_predictors()) %>% step_dummy(all_nominal_predictors()) %>% step_zv(all_predictors()) %>% step_normalize(all_numeric_predictors())
 
 ##Model 1 - Random Forest 
-rf_time_spec <- rand_forest() %>% set_engine("ranger", seed = rngseed) %>% set_mode("regression")
+rf_time_spec <- rand_forest() %>% set_engine("ranger") %>% set_mode("regression")
 rf_time_workflow <- workflow() %>% add_recipe(outbreak_time_recipe) %>% add_model(rf_time_spec)
 rf_time_fit <- rf_time_workflow %>% fit(data = time_train_data)
 predict_rf_time <- predict(rf_time_fit, new_data = time_train_data) %>% bind_cols(time_train_data %>% select(predicted_next))
@@ -84,7 +82,7 @@ print(metrics_rf_time) #rmse 107, rsq 0.991
 
 #CV
 cv_folds <- vfold_cv(time_train_data, v = 10)
-rf_time_tune <- rand_forest(trees = tune(), mtry = tune(), min_n = tune()) %>% set_engine("ranger", seed = rngseed) %>% set_mode("regression")
+rf_time_tune <- rand_forest(trees = tune(), mtry = tune(), min_n = tune()) %>% set_engine("ranger") %>% set_mode("regression")
 rf_time_tune_wf <- workflow() %>% add_recipe(outbreak_time_recipe) %>% add_model(rf_time_tune)
 rf_time_grid <- grid_regular(mtry(range = c(2, 8)), trees(range = c(100, 1000)), min_n(range = c(2, 10)), levels = 3)
 rf_time_cv <- tune_grid(rf_time_tune_wf, resamples = cv_folds, grid = rf_time_grid, metrics = metric_set(yardstick::rmse, rsq))
@@ -104,7 +102,7 @@ metrics_test_rf_time <- test_predict_rf_time %>% metrics(truth = predicted_next,
 print(metrics_test_rf_time) #at 155, 0.980
 
 combined_predict_rf_time <- bind_rows(train_predict_rf_time, test_predict_rf_time)
-ggplot(combined_predict_rf_time, aes(x = predicted_next, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "Predicted vs Observed: Training and Test Data") #Nice
+plot20 <- ggplot(combined_predict_rf_time, aes(x = predicted_next, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "Random Forest") #Nice
 
 ##Model 2 for this question - KNN
 knn_time_spec <- nearest_neighbor() %>% set_engine("kknn") %>% set_mode("regression")
@@ -136,10 +134,10 @@ metrics_test_knn_time <- test_predict_knn_time %>% metrics(truth = predicted_nex
 print(metrics_test_knn_time) #oof 605, 0.546
 
 combined_predict_knn_time <- bind_rows(train_predict_knn_time, test_predict_knn_time)
-ggplot(combined_predict_knn_time, aes(x = predicted_next, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "Predicted vs Observed: Training and Test Data") #yeah, definitely worse than the random forest
+plot21 <- ggplot(combined_predict_knn_time, aes(x = predicted_next, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "KNN") #yeah, definitely worse than the random forest
 
 ###Model 3 for this question - XGBoost
-xgb_time_spec <- boost_tree() %>% set_engine("xgboost", seed = rngseed) %>% set_mode("regression")
+xgb_time_spec <- boost_tree() %>% set_engine("xgboost") %>% set_mode("regression")
 xgb_time_workflow <- workflow() %>% add_recipe(outbreak_time_recipe) %>% add_model(xgb_time_spec)
 xgb_time_fit <- xgb_time_workflow %>% fit(data = time_train_data)
 predict_xgb_time <- predict(xgb_time_fit, new_data = time_train_data) %>% bind_cols(time_train_data %>% select(predicted_next))
@@ -148,7 +146,7 @@ print(metrics_xgb_time) #only 15.9, 1.000 niiiice what
 
 #CV
 cv_folds <- vfold_cv(time_train_data, v = 10)
-xgb_time_tune <- boost_tree(trees = tune(), tree_depth = tune(), min_n = tune(), loss_reduction = tune(), learn_rate = tune()) %>% set_engine("xgboost", seed = rngseed) %>% set_mode("regression")
+xgb_time_tune <- boost_tree(trees = tune(), tree_depth = tune(), min_n = tune(), loss_reduction = tune(), learn_rate = tune()) %>% set_engine("xgboost") %>% set_mode("regression")
 xgb_time_tune_wf <- workflow() %>% add_recipe(outbreak_time_recipe) %>% add_model(xgb_time_tune)
 xgb_time_grid <- grid_space_filling(trees(range = c(100, 1000)), tree_depth(range = c(3, 10)), min_n(range = c(2, 20)), loss_reduction(range = c(-5, 2)), learn_rate(range = c(-3, -0.5)), size = 20)
 xgb_time_cv <- tune_grid(xgb_time_tune_wf, resamples = cv_folds, grid = xgb_time_grid, metrics = metric_set(yardstick::rmse, rsq))
@@ -168,7 +166,11 @@ metrics_test_xgb_time <- test_predict_xgb_time %>% metrics(truth = predicted_nex
 print(metrics_test_xgb_time) #still very good 34.8, rsq 0.999
 
 combined_predict_xgb_time <- bind_rows(train_predict_xgb_time, test_predict_xgb_time)
-ggplot(combined_predict_xgb_time, aes(x = predicted_next, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "Predicted vs Observed: Training and Test Data") #gorgeous, best one 
+plot22 <- ggplot(combined_predict_xgb_time, aes(x = predicted_next, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "XGBoost") #gorgeous, best one 
+
+plot23 <- (plot20 + plot21) / plot22
+figure_file = here("results", "figures", "predictwhen.png")
+ggsave(filename = figure_file, plot = plot23) 
 
 ```
 
@@ -220,6 +222,18 @@ test_predict_rf_species <- predict(rf_species_best, new_data = species_test_data
 metrics_test_rf_species <- test_predict_rf_species %>% metric_set(yardstick::accuracy)(test_predict_rf_species,truth = genus_species, estimate = .pred_class)
 print(metrics_test_rf_species) #oof only 0.140
 
+
+#Confusion matrix
+test_conf_mat <- test_predict_rf_species %>%
+  conf_mat(truth = genus_species, estimate = .pred_class)
+print(test_conf_mat)
+
+#Visualize
+plot24 <- autoplot(test_conf_mat, type = "heatmap") +
+  labs(title = "Random Forest") + 
+  scale_fill_gradient(low = "yellow", high = "steelblue") +
+  geom_tile(color = NA)
+
 ##Model 2 - SVM 
 svm_species_spec <- svm_linear(cost = 1) %>% set_engine("LiblineaR") %>% set_mode("classification")
 svm_species_workflow <- workflow() %>% add_recipe(species_recipe) %>% add_model(svm_species_spec)
@@ -249,6 +263,18 @@ test_predict_svm_species <- predict(svm_species_best, new_data = species_test_da
 metrics_test_svm_species <- test_predict_svm_species %>% metric_set(yardstick::accuracy)(test_predict_svm_species,truth = genus_species, estimate = .pred_class)
 print(metrics_test_svm_species) #oof only 0.0247
 
+#Confusion matrix
+test_conf_mat2 <- test_predict_svm_species %>%
+  conf_mat(truth = genus_species, estimate = .pred_class)
+print(test_conf_mat2)
+
+#Visualize
+plot25 <- autoplot(test_conf_mat2, type = "heatmap") +
+  labs(title = "SVM") + 
+  scale_fill_gradient(low = "yellow", high = "steelblue") +
+  geom_tile(color = NA)
+
+
 ##Model 3 - Multinomial Regression
 mn_species_spec <- multinom_reg(penalty = 1) %>% set_engine("nnet", MaxNWts = 7000) %>% set_mode("classification")
 mn_species_workflow <- workflow() %>% add_recipe(species_recipe) %>% add_model(mn_species_spec)
@@ -257,27 +283,42 @@ predict_mn_species <- predict(mn_species_fit, new_data = species_train_data) %>%
 metrics_nm_species <- metric_set(yardstick::accuracy)(predict_mn_species, truth = genus_species, estimate = .pred_class)
 print(metrics_nm_species) #accuracy 0.288, huh
 
-#CV
-cv_folds <- vfold_cv(species_train_data, v = 10)
-mn_species_tune <- multinom_reg(penalty = tune()) %>% set_mode("classification")
-mn_species_tune_wf <- workflow() %>% add_recipe(species_recipe) %>% add_model(mn_species_tune)
-mn_species_grid <- expand.grid(decay = tune(), size = tune())
-mn_species_cv <- tune_grid(mn_species_tune_wf, resamples = cv_folds, grid = mn_species_grid, metrics = metric_set(yardstick::accuracy))
-collect_metrics(mn_species_cv) #accuracy 0.228
+#CV - got that same error again?
+##cv_folds <- vfold_cv(species_train_data, v = 10)
+#mn_species_tune <- multinom_reg(penalty = tune()) %>% set_mode("classification")
+#mn_species_tune_wf <- workflow() %>% add_recipe(species_recipe) %>% add_model(mn_species_tune)
+#mn_species_grid <- expand.grid(decay = tune(), size = tune())
+#mn_species_cv <- tune_grid(mn_species_tune_wf, resamples = cv_folds, grid = mn_species_grid, metrics = metric_set(yardstick::accuracy))
+#collect_metrics(mn_species_cv) #accuracy 0.228
 
 #Pick best CV for predictions
-best_mn_species_cv <- select_best(mn_species_cv, metric = "accuracy")
-final_mn_species <- finalize_workflow(mn_species_workflow, best_mn_species_cv)
-mn_species_best <- fit(final_mn_species, data = species_train_data)
-train_predict_mn_species <- predict(mn_species_best, new_data = species_train_data) %>% bind_cols(species_train_data %>% select(genus_species)) %>% mutate(dataset = "Train")
-metrics_train_mn_species <- train_predict_mn_species %>% metric_set(yardstick::accuracy)(train_predict_mn_species, truth = genus_species, estimate = .pred_class)
-print(metrics_train_mn_species) #accuracy 0.288, huh
+#best_mn_species_cv <- select_best(mn_species_cv, metric = "accuracy")
+#final_mn_species <- finalize_workflow(mn_species_workflow, best_mn_species_cv)
+#mn_species_best <- fit(final_mn_species, data = species_train_data)
+#train_predict_mn_species <- predict(mn_species_best, new_data = species_train_data) %>% bind_cols(species_train_data %>% select(genus_species)) %>% mutate(dataset = "Train")
+#metrics_train_mn_species <- train_predict_mn_species %>% metric_set(yardstick::accuracy)(train_predict_mn_species, truth = genus_species, estimate = .pred_class)
+#print(metrics_train_mn_species) #accuracy 0.288, huh
 
 #Evaluate with test data 
-test_predict_mn_species <- predict(mn_species_best, new_data = species_test_data) %>% bind_cols(species_test_data) %>% mutate(dataset = "Test")
+test_predict_mn_species <- predict(mn_species_fit, new_data = species_test_data) %>% bind_cols(species_test_data) %>% mutate(dataset = "Test")
 metrics_test_mn_species <- test_predict_mn_species %>% metric_set(yardstick::accuracy)(test_predict_mn_species,truth = genus_species, estimate = .pred_class) 
 print(metrics_test_mn_species) #oof only 0.0192, yikes again
 
+#Confusion matrix
+test_conf_mat3 <- test_predict_mn_species %>%
+  conf_mat(truth = genus_species, estimate = .pred_class)
+print(test_conf_mat3)
+
+#Visualize
+plot26 <- autoplot(test_conf_mat3, type = "heatmap") +
+  labs(title = "Multinomial Regression") + 
+  scale_fill_gradient(low = "yellow", high = "steelblue") +
+  geom_tile(color = NA)
+
+plot27 <- (plot24 + plot25) / plot26
+
+figure_file = here("results", "figures", "predict_species.png")
+ggsave(filename = figure_file, plot = plot27) 
 ```
 
 Third question - WHETHER it will have AMR
@@ -326,6 +367,17 @@ test_predict_log_resistance <- predict(log_resistance_best, new_data = resistanc
 metrics_test_log_resistance <- test_predict_log_resistance %>% metric_set(yardstick::accuracy)(test_predict_log_resistance,truth = has_resistance, estimate = .pred_class) 
 print(metrics_test_log_resistance) #accuracy 0.892
 
+#Confusion matrix
+test_conf_mat4 <- test_predict_log_resistance %>%
+  conf_mat(truth = has_resistance, estimate = .pred_class)
+print(test_conf_mat4)
+
+#Visualize
+plot28 <- autoplot(test_conf_mat4, type = "heatmap") +
+  labs(title = "Logistic Regression") + 
+  scale_fill_gradient(low = "yellow", high = "steelblue") +
+  geom_tile(color = NA)
+
 ##Model 2 - Random Forest
 rf_resistance_spec <- rand_forest() %>% set_engine("ranger") %>% set_mode("classification")
 rf_resistance_workflow <- workflow() %>% add_recipe(resistance_recipe) %>% add_model(rf_resistance_spec)
@@ -355,6 +407,17 @@ test_predict_rf_resistance <- predict(rf_resistance_best, new_data = resistance_
 metrics_test_rf_resistance <- test_predict_rf_resistance %>% metric_set(yardstick::accuracy)(test_predict_rf_resistance,truth = has_resistance, estimate = .pred_class)
 print(metrics_test_rf_resistance) #accuracy 1
 
+#Confusion matrix
+test_conf_mat5 <- test_predict_rf_resistance %>%
+  conf_mat(truth = has_resistance, estimate = .pred_class)
+print(test_conf_mat)
+
+#Visualize
+plot29 <- autoplot(test_conf_mat5, type = "heatmap") +
+  labs(title = "Random Forest") + 
+  scale_fill_gradient(low = "yellow", high = "steelblue") +
+  geom_tile(color = NA)
+
 ##Model 3 - XGBoost
 xgb_resistance_spec <- boost_tree() %>% set_engine("xgboost") %>% set_mode("classification")
 xgb_resistance_workflow <- workflow() %>% add_recipe(resistance_recipe) %>% add_model(xgb_resistance_spec)
@@ -383,6 +446,22 @@ print(metrics_train_xgb_resistance) #1
 test_predict_xgb_resistance <- predict(xgb_resistance_best, new_data = resistance_test_data) %>% bind_cols(resistance_test_data) %>% mutate(dataset = "Test")
 metrics_test_xgb_resistance <- test_predict_xgb_resistance %>% metrics(truth = has_resistance, estimate = .pred_class)
 print(metrics_test_xgb_resistance) #1
+
+#Confusion matrix
+test_conf_mat6 <- test_predict_xgb_resistance %>%
+  conf_mat(truth = has_resistance, estimate = .pred_class)
+print(test_conf_mat)
+
+#Visualize
+plot30 <- autoplot(test_conf_mat6, type = "heatmap") +
+  labs(title = "XGBoost") + 
+  scale_fill_gradient(low = "yellow", high = "steelblue") +
+  geom_tile(color = NA)
+
+plot31 <- (plot28 + plot29) /plot30
+
+figure_file = here("results", "figures", "predictamr.png")
+ggsave(filename = figure_file, plot = plot31) 
 
 ```
 
@@ -430,6 +509,17 @@ test_predict_rf_where <- predict(rf_where_best, new_data = where_test_data) %>% 
 metrics_test_rf_where <- test_predict_rf_where %>% metric_set(yardstick::accuracy)(test_predict_rf_where,truth = State, estimate = .pred_class)
 print(metrics_test_rf_where) #accuracy 0.0127, horrible 
 
+#Confusion matrix
+test_conf_mat7 <- test_predict_rf_where %>%
+  conf_mat(truth = State, estimate = .pred_class)
+print(test_conf_mat7)
+
+#Visualize
+plot32 <- autoplot(test_conf_mat7, type = "heatmap") +
+  labs(title = "Random Forest") + 
+  scale_fill_gradient(low = "yellow", high = "steelblue") +
+  geom_tile(color = NA)
+
 ##Model 2 - Multinomial Regression
 mn_where_spec <- multinom_reg(penalty = 1) %>% set_engine("nnet", MaxNWts = 14000) %>% set_mode("classification")
 mn_where_workflow <- workflow() %>% add_recipe(where_recipe) %>% add_model(mn_where_spec)
@@ -459,6 +549,17 @@ test_predict_mn_where <- predict(mn_where_fit, new_data = where_test_data) %>% b
 metrics_test_mn_where <- test_predict_mn_where %>% metric_set(yardstick::accuracy)(test_predict_mn_where, truth = State, estimate = .pred_class) 
 print(metrics_test_mn_where) #yikes, 0.00127
 
+#Confusion matrix
+test_conf_mat8 <- test_predict_mn_where %>%
+  conf_mat(truth = State, estimate = .pred_class)
+print(test_conf_mat8)
+
+#Visualize
+plot33 <- autoplot(test_conf_mat8, type = "heatmap") +
+  labs(title = "XGBoost") + 
+  scale_fill_gradient(low = "yellow", high = "steelblue") +
+  geom_tile(color = NA)
+
 ##Model 3 - SVM
 svm_where_spec <- svm_linear(cost = 1) %>% set_engine("LiblineaR") %>% set_mode("classification")
 svm_where_workflow <- workflow() %>% add_recipe(where_recipe) %>% add_model(svm_where_spec)
@@ -487,5 +588,272 @@ print(metrics_train_svm_where) #accuracy 0.134
 test_predict_svm_where <- predict(svm_where_best, new_data = where_test_data) %>% bind_cols(where_test_data) %>% mutate(dataset = "Test")
 metrics_test_svm_where <- test_predict_svm_where %>% metric_set(yardstick::accuracy)(test_predict_svm_where,truth = State, estimate = .pred_class)
 print(metrics_test_svm_where) #yikes, 0.00381
+
+#Confusion matrix
+test_conf_mat9 <- test_predict_svm_where %>%
+  conf_mat(truth = State, estimate = .pred_class)
+print(test_conf_mat9)
+
+#Visualize
+plot34 <- autoplot(test_conf_mat9, type = "heatmap") +
+  labs(title = "XGBoost") + 
+  scale_fill_gradient(low = "yellow", high = "steelblue") +
+  geom_tile(color = NA)
+
+plot35 <- (plot32 + plot33) / plot34
+
+figure_file = here("results", "figures", "predictwhere.png")
+ggsave(filename = figure_file, plot = plot35) 
+
+```
+
+
+```{r}
+###Moving over here to do a quick modeling of current state of resistance trends - increasing or decreasing over time?
+df_anti_time <- mydata_clean %>% group_by(date) %>% summarise(`Number Anti` = sum(`Number of Outbreak Isolates with antimicrobial resistance`, na.rm = TRUE)) %>%
+  ungroup()
+
+data_split <- initial_split(df_anti_time, prop = 0.75)
+anti_train_data <- training(data_split)
+anti_test_data <- testing(data_split)
+
+
+##Model 1 - ARIMA
+cat("Train period:", min(anti_train_data$date), "to", max(anti_train_data$date), "\n")
+cat("Test period:", min(anti_test_data$date), "to", max(anti_test_data$date), "\n")
+
+anti_recipe <- recipe(`Number Anti` ~ date, data = anti_train_data) %>% step_mutate(date_num = as.numeric(date))
+
+resamples <- time_series_cv(data = anti_train_data, date_var = date, initial = "6 months", assess = "1 month", skip = "1 month", cumulative = TRUE,slice_limit = 10)
+
+#CV
+arima_anti_spec <- arima_reg() %>% set_engine("auto_arima")
+arima_anti_wf <- workflow() %>% add_model(arima_anti_spec) %>% add_recipe(anti_recipe)
+resamples_fitted_arima <- arima_anti_wf %>% fit_resamples(resamples = resamples, control = control_resamples(save_pred = TRUE, verbose = TRUE))
+collect_metrics(resamples_fitted_arima) #rmse 10.9
+
+#Pick best CV for predictions
+best_arima_anti_cv <- select_best(resamples_fitted_arima, metric = "rmse")
+final_arima_anti <- finalize_workflow(arima_anti_wf, best_arima_anti_cv)
+arima_anti_best <- fit(final_arima_anti, data = anti_train_data)
+train_predict_arima_anti <- predict(arima_anti_best, new_data = anti_train_data) %>% bind_cols(anti_train_data %>% select(`Number Anti`)) %>% mutate(dataset = "Train")
+metrics_train_arima_anti <- train_predict_arima_anti %>% metrics(truth = `Number Anti`, estimate = .pred)
+print(metrics_train_arima_anti) #now 30.5, rsq 0.131
+
+#Evaluate with test data 
+test_predict_arima_anti <- predict(arima_anti_best, new_data = anti_test_data) %>% bind_cols(anti_test_data) %>% mutate(dataset = "Test")
+metrics_test_arima_anti <- test_predict_arima_anti %>% metrics(truth = `Number Anti`, estimate = .pred)
+print(metrics_test_arima_anti) #still not good, 26.1 and 0.115
+
+combined_predict_arima_anti <- bind_rows(train_predict_arima_anti, test_predict_arima_anti)
+plot12 <- ggplot(combined_predict_arima_anti, aes(x = `Number Anti`, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "ARIMA") #yikes?
+
+figure_file = here("results", "figures", "outbreaksovertimebasic1.png")
+ggsave(filename = figure_file, plot = plot12) 
+
+plot11 <- ggplot(test_predict_arima_anti, aes(x = date, y = `Number Anti`)) +
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  stat_regline_equation(label.x = 17000, label.y = 100) +
+  labs(x = "Number of Outbreak Isolates with AMR", y = "Date", title = "Increasing Trend of AMR Over Time")
+
+figure_file = here("results", "figures", "amr-time-trend-line.png")
+ggsave(filename = figure_file, plot = plot10) 
+
+##Model 2 - Exponential Smoothing
+#CV
+exp_anti_spec <- exp_smoothing() %>% set_engine("ets")
+exp_anti_wf <- workflow() %>% add_model(exp_anti_spec) %>% add_recipe(anti_recipe)
+resamples_fitted_exp <- arima_anti_wf %>% fit_resamples(resamples = resamples, control = control_resamples(save_pred = TRUE, verbose = TRUE))
+collect_metrics(resamples_fitted_exp) #same, 10.9 
+
+#Pick best CV for predictions
+best_exp_anti_cv <- select_best(resamples_fitted_exp, metric = "rmse")
+final_exp_anti <- finalize_workflow(exp_anti_wf, best_exp_anti_cv)
+exp_anti_best <- fit(final_exp_anti, data = anti_train_data)
+train_predict_exp_anti <- predict(exp_anti_best, new_data = anti_train_data) %>% bind_cols(anti_train_data %>% select(`Number Anti`)) %>% mutate(dataset = "Train")
+metrics_train_exp_anti <- train_predict_exp_anti %>% metrics(truth = `Number Anti`, estimate = .pred)
+print(metrics_train_exp_anti) #now 32.8
+
+#Evaluate with test data 
+test_predict_exp_anti <- predict(exp_anti_best, new_data = anti_test_data) %>% bind_cols(anti_test_data) %>% mutate(dataset = "Test")
+metrics_test_exp_anti <- test_predict_exp_anti %>% metrics(truth = `Number Anti`, estimate = .pred)
+print(metrics_test_exp_anti) #still not good, 28.1
+
+combined_predict_exp_anti <- bind_rows(train_predict_exp_anti, test_predict_exp_anti)
+plot13 <- ggplot(combined_predict_exp_anti, aes(x = `Number Anti`, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "Exponential Smoothing") #I don't really know what I'm looking at here?
+
+figure_file = here("results", "figures", "outbreaksovertimebasic2.png")
+ggsave(filename = figure_file, plot = plot13) 
+
+##Model 3 - Prophet
+#CV
+proph_anti_spec <- prophet_reg(seasonality_yearly = TRUE) %>% set_engine("prophet")
+proph_anti_wf <- workflow() %>% add_model(proph_anti_spec) %>% add_recipe(anti_recipe)
+resamples_fitted_proph <- proph_anti_wf %>% fit_resamples(resamples = resamples, control = control_resamples(save_pred = TRUE, verbose = TRUE))
+collect_metrics(resamples_fitted_proph) #rmse 37
+
+#Pick best CV for predictions
+best_proph_anti_cv <- select_best(resamples_fitted_proph, metric = "rmse")
+final_proph_anti <- finalize_workflow(proph_anti_wf, best_proph_anti_cv)
+proph_anti_best <- fit(final_proph_anti, data = anti_train_data)
+train_predict_proph_anti <- predict(proph_anti_best, new_data = anti_train_data) %>% bind_cols(anti_train_data %>% select(`Number Anti`)) %>% mutate(dataset = "Train")
+metrics_train_proph_anti <- train_predict_proph_anti %>% metrics(truth = `Number Anti`, estimate = .pred)
+print(metrics_train_proph_anti) #now 35.4, 0.0271
+
+#Evaluate with test data 
+test_predict_proph_anti <- predict(proph_anti_best, new_data = anti_test_data) %>% bind_cols(anti_test_data) %>% mutate(dataset = "Test")
+metrics_test_proph_anti <- test_predict_proph_anti %>% metrics(truth = `Number Anti`, estimate = .pred)
+print(metrics_test_proph_anti) #still not good, 43, 0.0252, yiikes
+
+combined_predict_proph_anti <- bind_rows(train_predict_proph_anti, test_predict_proph_anti)
+plot14 <- ggplot(combined_predict_proph_anti, aes(x = `Number Anti`, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "Prophet") #And ew again
+
+figure_file = here("results", "figures", "outbreaksovertimebasic3.png")
+ggsave(filename = figure_file, plot = plot14) 
+
+plot15 <- (plot12 + plot13) / plot14
+
+figure_file = here("results", "figures", "outbreaksovertimebasic.png")
+ggsave(filename = figure_file, plot = plot15) 
+
+```
+
+```{r}
+###Anotha One - total number of outbreaks over time, increasing or decreasing?
+df_outbreak <- mydata_clean %>% group_by(date) %>% summarise(total_isolates = sum(`Outbreak associated isolates`))
+
+data_split <- initial_split(df_outbreak, prop = 0.75)
+outbreak_train_data <- training(data_split)
+outbreak_test_data  <- testing(data_split)
+
+outbreak_recipe <- recipe(total_isolates ~ date, data = outbreak_train_data) %>%
+  step_mutate(month_num = as.numeric(format(date, "%m")), sin_month = sin(2*pi*month_num/12), cos_month = cos(2*pi*month_num/12)) %>%
+  step_rm(date, month_num) 
+
+##Model 1 - Linear Regression
+lin_outbreak_spec <- linear_reg() %>% set_engine("lm")
+lin_outbreak_workflow <- workflow() %>% add_recipe(outbreak_recipe) %>% add_model(lin_outbreak_spec)
+lin_outbreak_fit <- lin_outbreak_workflow %>% fit(data = outbreak_train_data)
+predict_lin_outbreak <- predict(lin_outbreak_fit, new_data = outbreak_train_data) %>% bind_cols(outbreak_train_data %>% select(total_isolates))
+metrics_lin_outbreak <- predict_lin_outbreak %>% metrics(truth = total_isolates, estimate = .pred) 
+print(metrics_lin_outbreak) #rmse 162, 0.571
+
+#CV
+cv_folds <- vfold_cv(outbreak_train_data, v = 10)
+lin_outbreak_grid <- tibble(penalty = 10^seq(-5, 2, length.out = 50))
+lin_outbreak_tune <- linear_reg() %>% set_engine("lm")
+lin_outbreak_tune_wf <- workflow() %>% add_recipe(outbreak_recipe) %>% add_model(lin_outbreak_tune)
+lin_outbreak_cv <- tune_grid(lin_outbreak_tune_wf, resamples = cv_folds, grid = lin_outbreak_grid, metrics = metric_set(yardstick::rmse, rsq))
+collect_metrics(lin_outbreak_cv) #rmse 156, 0.657
+
+#Pick best CV for predictions
+best_lin_outbreak_cv <- select_best(lin_outbreak_cv, metric = "rmse")
+final_lin_outbreak <- finalize_workflow(lin_outbreak_workflow, best_lin_outbreak_cv)
+lin_outbreak_best <- fit(final_lin_outbreak, data = outbreak_train_data)
+train_predict_lin_outbreak <- predict(lin_outbreak_best, new_data = outbreak_train_data) %>% bind_cols(outbreak_train_data %>% select(total_isolates)) %>% mutate(dataset = "Train")
+metrics_train_lin_outbreak <- train_predict_lin_outbreak %>% metrics(truth = total_isolates, estimate = .pred)
+print(metrics_train_lin_outbreak) #back to 162, 0.571
+
+#Evaluate with test data 
+test_predict_lin_outbreak <- predict(lin_outbreak_best, new_data = outbreak_test_data) %>% bind_cols(outbreak_test_data) %>% mutate(dataset = "Test")
+metrics_test_lin_outbreak <- test_predict_lin_outbreak %>% metrics(truth = total_isolates, estimate = .pred)
+print(metrics_test_lin_outbreak) #at 161, 0.615
+
+combined_predict_lin_outbreak <- bind_rows(train_predict_lin_outbreak, test_predict_lin_outbreak)
+plot16 <- ggplot(combined_predict_lin_outbreak, aes(x = total_isolates, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "Linear Regression") #Meh, weak
+
+plot10 <- ggplot(test_predict_lin_outbreak, aes(x = date, y = total_isolates)) +
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  stat_regline_equation(label.x = 17000, label.y = 1000) +
+  labs(x = "Number of Outbreak Associated Isolates", y = "Date", title = "Decreasing Trend of Outbreaks Over Time")
+
+figure_file = here("results", "figures", "outbreak-time-trend-line.png")
+ggsave(filename = figure_file, plot = plot10) 
+
+##Model 2 - Poisson
+pois_outbreak_spec <- poisson_reg() %>% set_engine("glm") %>% set_mode("regression")
+pois_outbreak_workflow <- workflow() %>% add_recipe(outbreak_recipe) %>% add_model(pois_outbreak_spec)
+pois_outbreak_fit <- pois_outbreak_workflow %>% fit(data = outbreak_train_data)
+predict_pois_outbreak <- predict(pois_outbreak_fit, new_data = outbreak_train_data) %>% bind_cols(outbreak_train_data %>% select(total_isolates))
+metrics_pois_outbreak <- predict_pois_outbreak %>% metrics(truth = total_isolates, estimate = .pred) 
+print(metrics_pois_outbreak) #rmse 163, 0.564
+
+#CV
+cv_folds <- vfold_cv(outbreak_train_data, v = 10)
+pois_outbreak_cv <- pois_outbreak_workflow %>% fit_resamples(resamples = cv_folds, metrics = metric_set(yardstick::rmse, rsq))
+collect_metrics(pois_outbreak_cv) #rmse 163, 0.615
+
+#Pick best CV for predictions
+best_pois_outbreak_cv <- select_best(pois_outbreak_cv, metric = "rmse")
+final_pois_outbreak <- finalize_workflow(pois_outbreak_workflow, best_pois_outbreak_cv)
+pois_outbreak_best <- fit(final_pois_outbreak, data = outbreak_train_data)
+train_predict_pois_outbreak <- predict(pois_outbreak_best, new_data = outbreak_train_data) %>% bind_cols(outbreak_train_data %>% select(total_isolates)) %>% mutate(dataset = "Train")
+metrics_train_pois_outbreak <- train_predict_pois_outbreak %>% metrics(truth = total_isolates, estimate = .pred)
+print(metrics_train_pois_outbreak) #back to 163, 0.564
+
+#Evaluate with test data 
+test_predict_pois_outbreak <- predict(pois_outbreak_best, new_data = outbreak_test_data) %>% bind_cols(outbreak_test_data) %>% mutate(dataset = "Test")
+metrics_test_pois_outbreak <- test_predict_pois_outbreak %>% metrics(truth = total_isolates, estimate = .pred)
+print(metrics_test_pois_outbreak) #at 168, 0.570
+
+combined_predict_pois_outbreak <- bind_rows(train_predict_pois_outbreak, test_predict_pois_outbreak)
+plot17 <- ggplot(combined_predict_pois_outbreak, aes(x = total_isolates, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "Poisson") #Yeah, again, meh
+
+##Model 3 - Random Forest
+rf_outbreak_spec <- rand_forest() %>% set_engine("ranger") %>% set_mode("regression")
+rf_outbreak_workflow <- workflow() %>% add_recipe(outbreak_recipe) %>% add_model(rf_outbreak_spec)
+rf_outbreak_fit <- rf_outbreak_workflow %>% fit(data = outbreak_train_data)
+predict_rf_outbreak <- predict(rf_outbreak_fit, new_data = outbreak_train_data) %>% bind_cols(outbreak_train_data %>% select(total_isolates))
+metrics_rf_outbreak <- predict_rf_outbreak %>% metrics(truth = total_isolates, estimate = .pred) 
+print(metrics_rf_outbreak) #rmse 153, 0.618
+
+#CV
+cv_folds <- vfold_cv(outbreak_train_data, v = 10)
+rf_outbreak_tune <- rand_forest(trees = tune(), mtry = tune(), min_n = tune()) %>% set_engine("ranger") %>% set_mode("regression")
+rf_outbreak_tune_wf <- workflow() %>% add_recipe(outbreak_recipe) %>% add_model(rf_outbreak_tune)
+rf_outbreak_grid <- grid_regular(mtry(range = c(2, 8)), trees(range = c(100, 1000)), min_n(range = c(2, 10)), levels = 3)
+rf_outbreak_cv <- tune_grid(rf_outbreak_tune_wf, resamples = cv_folds, grid = rf_outbreak_grid, metrics = metric_set(yardstick::rmse, rsq))
+collect_metrics(rf_outbreak_cv) #rmse 163-168, 0.6xxx
+
+#Pick best CV for predictions
+best_rf_outbreak_cv <- select_best(rf_outbreak_cv, metric = "rmse")
+final_rf_outbreak <- finalize_workflow(rf_outbreak_workflow, best_rf_outbreak_cv)
+rf_outbreak_best <- fit(final_rf_outbreak, data = outbreak_train_data)
+train_predict_rf_outbreak <- predict(rf_outbreak_best, new_data = outbreak_train_data) %>% bind_cols(outbreak_train_data %>% select(total_isolates)) %>% mutate(dataset = "Train")
+metrics_train_rf_outbreak <- train_predict_rf_outbreak %>% metrics(truth = total_isolates, estimate = .pred)
+print(metrics_train_rf_outbreak) #at 153, 0.618
+
+#Evaluate with test data 
+test_predict_rf_outbreak <- predict(rf_outbreak_best, new_data = outbreak_test_data) %>% bind_cols(outbreak_test_data) %>% mutate(dataset = "Test")
+metrics_test_rf_outbreak <- test_predict_rf_outbreak %>% metrics(truth = total_isolates, estimate = .pred)
+print(metrics_test_rf_outbreak) #rmse 177, 0.555
+
+combined_predict_rf_outbreak <- bind_rows(train_predict_rf_outbreak, test_predict_rf_outbreak)
+plot18 <- ggplot(combined_predict_rf_outbreak, aes(x = total_isolates, y = .pred, color = dataset, shape = dataset)) + geom_point(size = 2, alpha = 0.7) + labs(x = "Observed values", y = "Predicted values", title = "Random Forest") #Still meh
+
+Create time series
+ts_outbreaks <- ts(df_outbreak$total_isolates, frequency = 12) 
+
+#Test for seasonality
+seasonal_model <- glm(total_isolates ~ factor(month(date)), data = df_outbreak, family = poisson())
+anova(seasonal_model, test = "Chisq")
+
+#Which months have most outbreaks?
+plot9 <- df_outbreak %>% mutate(month = month(date, label = TRUE)) %>%
+  group_by(month) %>%
+  summarise(mean_outbreaks = mean(total_isolates), total_outbreaks = sum(total_isolates)) %>%
+  ggplot(aes(x = month, y = mean_outbreaks)) +
+  geom_col(fill = "coral") +
+  labs(title = "Average Outbreaks by Month", x = "Month", y = "Mean Number of Outbreaks") +
+  theme_minimal()
+
+figure_file = here("results", "figures", "outbreaks-per-month.png")
+ggsave(filename = figure_file, plot = plot9) 
+
+plot19 <- (plot17 + plot18) / plot16
+figure_file = here("results", "figures", "amrovertimebasic.png")
+ggsave(filename = figure_file, plot = plot19) 
 
 ```

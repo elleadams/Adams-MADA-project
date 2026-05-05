@@ -134,7 +134,11 @@ Okay, so at this point I have the dataframe owar_data, which has information for
 Let's assign at the end to some final variable, this makes it easier to add further cleaning steps above.
 
 ```{r}
-processeddata <- owar_data
+#Need to make a better data frame? 
+processeddata <- owar_data %>% mutate(date = make_date(Year, Month, 1)) %>% 
+    mutate(genus_species = paste(Pathogen, `Serotype/Species`, sep = " ")) %>% 
+    select(-c(Year, Month, `Source Type`, `Source Site`, Pathogen, `Serotype/Species`, `New multistate outbreaks`, `New multistate outbreaks - US`, `% Isolates with clinically important antimicrobial resistance`)) %>%
+    mutate(is_outbreak = ifelse(`Outbreak associated isolates` > 0, 1, 0))
 ```
 
 # Save data 
