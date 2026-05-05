@@ -29,6 +29,8 @@ $\land$ Corresponding author: ea32206@uga.edu
 $\dagger$ Disclaimer: The opinions expressed in this article are the
 author's own and don't reflect their employer.
 
+Supplementary material: [Supplement](https://github.com/elleadams/Adams-MADA-project/blob/main/products/manuscript/supplement/Supplementary-Material.pdf)
+
 # Abstract
 The detection and prevention of infectious disease outbreaks is a core component of public health work, and publicly available data is a useful tool in the identification of patterns in outbreak data to be used for the future. This study used publicly available BEAM Dashboard data to demonstrate the utility of this data by determining patterns in outbreaks over time and predicting key features of future outbreaks. 
 
